@@ -1,0 +1,207 @@
+:root {
+  --pad: 6px;
+}
+
+body {
+  padding: 8px;
+  color: var(--vscode-foreground);
+  font-family: var(--vscode-font-family);
+  font-size: var(--vscode-font-size);
+}
+
+.scope,
+.query-row,
+.scope-opts {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+  margin-bottom: 6px;
+}
+
+select,
+input[type="text"] {
+  flex: 1;
+  min-width: 0;
+  padding: 4px 6px;
+  color: var(--vscode-input-foreground);
+  background: var(--vscode-input-background);
+  border: 1px solid var(--vscode-input-border, transparent);
+  border-radius: 2px;
+  outline: none;
+}
+
+input[type="text"]:focus,
+select:focus {
+  border-color: var(--vscode-focusBorder);
+}
+
+.options {
+  display: flex;
+  gap: 2px;
+}
+
+button {
+  color: var(--vscode-button-secondaryForeground, var(--vscode-foreground));
+  background: var(--vscode-button-secondaryBackground, transparent);
+  border: 1px solid var(--vscode-contrastBorder, transparent);
+  border-radius: 2px;
+  padding: 3px 8px;
+  cursor: pointer;
+  font-family: var(--vscode-font-family);
+}
+
+button:hover {
+  background: var(--vscode-button-secondaryHoverBackground, var(--vscode-toolbar-hoverBackground));
+}
+
+button.primary {
+  color: var(--vscode-button-foreground);
+  background: var(--vscode-button-background);
+}
+
+button.primary:hover {
+  background: var(--vscode-button-hoverBackground);
+}
+
+.options button {
+  min-width: 26px;
+  font-size: 11px;
+  padding: 2px 4px;
+}
+
+.options button.active {
+  background: var(--vscode-inputOption-activeBackground);
+  color: var(--vscode-inputOption-activeForeground);
+  border-color: var(--vscode-inputOption-activeBorder);
+}
+
+.scope-opts label {
+  display: flex;
+  align-items: center;
+  gap: 3px;
+  font-size: 12px;
+}
+
+.spacer {
+  flex: 1;
+}
+
+.status {
+  font-size: 12px;
+  color: var(--vscode-descriptionForeground);
+  min-height: 16px;
+  margin: 4px 0;
+}
+
+.status.error {
+  color: var(--vscode-errorForeground);
+}
+
+.results {
+  margin-top: 4px;
+}
+
+.secret-group {
+  margin-bottom: 2px;
+}
+
+.secret-header {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 2px 4px;
+  cursor: pointer;
+  user-select: none;
+  border-radius: 2px;
+}
+
+.secret-header:hover {
+  background: var(--vscode-list-hoverBackground);
+}
+
+.secret-header .path {
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.secret-header .count {
+  color: var(--vscode-badge-foreground);
+  background: var(--vscode-badge-background);
+  border-radius: 10px;
+  padding: 0 6px;
+  font-size: 11px;
+}
+
+.match-line {
+  display: flex;
+  gap: 6px;
+  padding: 1px 4px 1px 22px;
+  cursor: pointer;
+  border-radius: 2px;
+  white-space: pre;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.match-line:hover {
+  background: var(--vscode-list-hoverBackground);
+}
+
+.match-line .key {
+  color: var(--vscode-symbolIcon-keyForeground, var(--vscode-descriptionForeground));
+}
+
+.match-line .badge {
+  font-size: 10px;
+  opacity: 0.7;
+}
+
+mark {
+  background: var(--vscode-editor-findMatchHighlightBackground, rgba(234, 92, 0, 0.33));
+  color: inherit;
+  border-radius: 2px;
+}
+
+.diff-old mark {
+  background: var(--vscode-diffEditor-removedTextBackground, rgba(255, 0, 0, 0.2));
+}
+
+.diff-new mark {
+  background: var(--vscode-diffEditor-insertedTextBackground, rgba(0, 255, 0, 0.2));
+}
+
+.preview {
+  margin-top: 6px;
+  border: 1px solid var(--vscode-panel-border);
+  border-radius: 3px;
+  padding: 6px;
+}
+
+.preview h3 {
+  margin: 0 0 6px;
+  font-size: 12px;
+}
+
+.preview-item {
+  margin-bottom: 6px;
+  font-family: var(--vscode-editor-font-family, monospace);
+  font-size: 12px;
+}
+
+.preview-item .path {
+  color: var(--vscode-descriptionForeground);
+}
+
+.diff-old {
+  color: var(--vscode-gitDecoration-deletedResourceForeground, inherit);
+}
+
+.diff-new {
+  color: var(--vscode-gitDecoration-addedResourceForeground, inherit);
+}
+
+.hidden {
+  display: none;
+}
