@@ -1,10 +1,19 @@
 {
-  "name": "vault-search-replace",
-  "displayName": "Vault Search & Replace",
-  "description": "Browse, search, edit, and batch search-and-replace HashiCorp Vault KV secrets. Fully local, no telemetry.",
+  "name": "vault-workbench",
+  "displayName": "Vault Workbench",
+  "description": "Vault Workbench: browse, search, edit, and batch search-and-replace HashiCorp Vault KV secrets. Fully local, no telemetry.",
   "version": "0.1.0",
-  "publisher": "local",
+  "publisher": "zwsq",
   "license": "MIT",
+  "icon": "media/icon.png",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/zwsq/vault-workbench.git"
+  },
+  "bugs": {
+    "url": "https://github.com/zwsq/vault-workbench/issues"
+  },
+  "homepage": "https://github.com/zwsq/vault-workbench#readme",
   "engines": {
     "vscode": "^1.90.0"
   },
@@ -13,11 +22,24 @@
   ],
   "keywords": [
     "vault",
-    "hashicorp",
+    "hashicorp vault",
+    "vault workbench",
     "secrets",
-    "search",
-    "replace"
+    "secrets management",
+    "vault search",
+    "vault replace",
+    "vault batch replace",
+    "batch replace",
+    "search and replace",
+    "find and replace",
+    "kv",
+    "kv v2",
+    "hcp vault"
   ],
+  "galleryBanner": {
+    "color": "#1c1c1c",
+    "theme": "dark"
+  },
   "main": "./dist/extension.js",
   "activationEvents": [],
   "capabilities": {
@@ -195,7 +217,7 @@
       ]
     },
     "configuration": {
-      "title": "Vault Search & Replace",
+      "title": "Vault Workbench",
       "properties": {
         "vault.defaultConnection": {
           "type": "string",

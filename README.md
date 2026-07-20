@@ -1,4 +1,4 @@
-# Vault Search & Replace
+# Vault Workbench
 
 A Visual Studio Code extension to browse, search, edit, and perform batch
 search-and-replace across HashiCorp Vault KV secrets — with a UX modeled on VS

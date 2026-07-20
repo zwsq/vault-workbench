@@ -14,9 +14,9 @@ import { Logger } from "./utils/logger";
  * them together. Keeps all cross-cutting concerns (logging, disposal) in one place.
  */
 export function activate(context: vscode.ExtensionContext): void {
-  const logger = new Logger("Vault");
+  const logger = new Logger("Vault Workbench");
   context.subscriptions.push(logger);
-  logger.info("Vault Search & Replace activated (fully local, no telemetry).");
+  logger.info("Vault Workbench activated (fully local, no telemetry).");
 
   const store = new ConnectionStore(context);
   const factory = new VaultServiceFactory(store);
