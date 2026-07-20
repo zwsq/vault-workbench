@@ -1,0 +1,261 @@
+{
+  "name": "vault-search-replace",
+  "displayName": "Vault Search & Replace",
+  "description": "Browse, search, edit, and batch search-and-replace HashiCorp Vault KV secrets. Fully local, no telemetry.",
+  "version": "0.1.0",
+  "publisher": "local",
+  "license": "MIT",
+  "engines": {
+    "vscode": "^1.90.0"
+  },
+  "categories": [
+    "Other"
+  ],
+  "keywords": [
+    "vault",
+    "hashicorp",
+    "secrets",
+    "search",
+    "replace"
+  ],
+  "main": "./dist/extension.js",
+  "activationEvents": [],
+  "capabilities": {
+    "untrustedWorkspaces": {
+      "supported": false
+    }
+  },
+  "contributes": {
+    "viewsContainers": {
+      "activitybar": [
+        {
+          "id": "vaultExplorerContainer",
+          "title": "Vault",
+          "icon": "media/vault.svg"
+        }
+      ]
+    },
+    "views": {
+      "vaultExplorerContainer": [
+        {
+          "id": "vaultExplorer",
+          "name": "Vault Explorer",
+          "icon": "media/vault.svg"
+        },
+        {
+          "id": "vaultSearch",
+          "name": "Search & Replace",
+          "type": "webview"
+        }
+      ]
+    },
+    "viewsWelcome": [
+      {
+        "view": "vaultExplorer",
+        "contents": "No Vault connections yet.\n[Add Connection](command:vault.addConnection)\nConnections are stored locally and never synced."
+      }
+    ],
+    "commands": [
+      {
+        "command": "vault.addConnection",
+        "title": "Vault: Add Connection",
+        "icon": "$(add)"
+      },
+      {
+        "command": "vault.editConnection",
+        "title": "Vault: Edit Connection",
+        "icon": "$(edit)"
+      },
+      {
+        "command": "vault.deleteConnection",
+        "title": "Vault: Delete Connection",
+        "icon": "$(trash)"
+      },
+      {
+        "command": "vault.setToken",
+        "title": "Vault: Set Token",
+        "icon": "$(key)"
+      },
+      {
+        "command": "vault.refresh",
+        "title": "Vault: Refresh",
+        "icon": "$(refresh)"
+      },
+      {
+        "command": "vault.openSecret",
+        "title": "Vault: Open Secret"
+      },
+      {
+        "command": "vault.newSecret",
+        "title": "Vault: New Secret",
+        "icon": "$(new-file)"
+      },
+      {
+        "command": "vault.deleteSecret",
+        "title": "Vault: Delete Secret",
+        "icon": "$(trash)"
+      },
+      {
+        "command": "vault.copyPath",
+        "title": "Vault: Copy Path"
+      },
+      {
+        "command": "vault.searchHere",
+        "title": "Vault: Search In This Path",
+        "icon": "$(search)"
+      },
+      {
+        "command": "vault.focusSearch",
+        "title": "Vault: Focus Search Panel"
+      },
+      {
+        "command": "vault.restoreBackup",
+        "title": "Vault: Restore Backup"
+      },
+      {
+        "command": "vault.exportResultsJson",
+        "title": "Vault: Export Search Results (JSON)"
+      },
+      {
+        "command": "vault.exportResultsCsv",
+        "title": "Vault: Export Search Results (CSV)"
+      },
+      {
+        "command": "vault.showLog",
+        "title": "Vault: Show Log"
+      }
+    ],
+    "menus": {
+      "view/title": [
+        {
+          "command": "vault.addConnection",
+          "when": "view == vaultExplorer",
+          "group": "navigation@1"
+        },
+        {
+          "command": "vault.refresh",
+          "when": "view == vaultExplorer",
+          "group": "navigation@2"
+        }
+      ],
+      "view/item/context": [
+        {
+          "command": "vault.setToken",
+          "when": "view == vaultExplorer && viewItem == vaultConnection",
+          "group": "1_auth@1"
+        },
+        {
+          "command": "vault.editConnection",
+          "when": "view == vaultExplorer && viewItem == vaultConnection",
+          "group": "2_manage@1"
+        },
+        {
+          "command": "vault.deleteConnection",
+          "when": "view == vaultExplorer && viewItem == vaultConnection",
+          "group": "2_manage@2"
+        },
+        {
+          "command": "vault.searchHere",
+          "when": "view == vaultExplorer && viewItem =~ /^vault(Connection|Mount|Folder)$/",
+          "group": "3_search@1"
+        },
+        {
+          "command": "vault.newSecret",
+          "when": "view == vaultExplorer && viewItem =~ /^vault(Mount|Folder)$/",
+          "group": "4_edit@1"
+        },
+        {
+          "command": "vault.deleteSecret",
+          "when": "view == vaultExplorer && viewItem == vaultSecret",
+          "group": "4_edit@2"
+        },
+        {
+          "command": "vault.copyPath",
+          "when": "view == vaultExplorer && viewItem =~ /^vault(Folder|Secret)$/",
+          "group": "5_copy@1"
+        }
+      ],
+      "commandPalette": [
+        {
+          "command": "vault.openSecret",
+          "when": "false"
+        },
+        {
+          "command": "vault.copyPath",
+          "when": "false"
+        },
+        {
+          "command": "vault.searchHere",
+          "when": "false"
+        },
+        {
+          "command": "vault.deleteSecret",
+          "when": "false"
+        }
+      ]
+    },
+    "configuration": {
+      "title": "Vault Search & Replace",
+      "properties": {
+        "vault.defaultConnection": {
+          "type": "string",
+          "default": "",
+          "description": "Display name of the default Vault connection to select on startup.",
+          "scope": "application"
+        },
+        "vault.defaultMount": {
+          "type": "string",
+          "default": "",
+          "description": "Default KV mount used when a connection does not specify one.",
+          "scope": "application"
+        },
+        "vault.concurrency": {
+          "type": "number",
+          "default": 8,
+          "minimum": 1,
+          "maximum": 64,
+          "description": "Maximum number of concurrent Vault requests during search and batch operations.",
+          "scope": "application"
+        },
+        "vault.timeoutMs": {
+          "type": "number",
+          "default": 15000,
+          "minimum": 1000,
+          "description": "Per-request timeout in milliseconds.",
+          "scope": "application"
+        },
+        "vault.backupBeforeReplace": {
+          "type": "boolean",
+          "default": true,
+          "description": "Store a local backup of each secret before it is modified by a batch replace.",
+          "scope": "application"
+        },
+        "vault.readOnly": {
+          "type": "boolean",
+          "default": false,
+          "description": "Read-only mode: disables all writes to Vault.",
+          "scope": "application"
+        }
+      }
+    }
+  },
+  "scripts": {
+    "vscode:prepublish": "npm run package",
+    "compile": "npm run check-types && node esbuild.js",
+    "package": "npm run check-types && node esbuild.js --production",
+    "watch": "node esbuild.js --watch",
+    "check-types": "tsc --noEmit",
+    "lint": "eslint src --ext ts",
+    "test:unit": "tsc -p tsconfig.test.json && node --test ./out-test/**/*.test.js",
+    "pretest": "npm run compile"
+  },
+  "devDependencies": {
+    "@types/node": "^20.14.0",
+    "@types/vscode": "^1.90.0",
+    "@typescript-eslint/eslint-plugin": "^7.13.0",
+    "@typescript-eslint/parser": "^7.13.0",
+    "esbuild": "^0.21.5",
+    "eslint": "^8.57.0",
+    "typescript": "^5.4.5"
+  }
+}
