@@ -20,6 +20,11 @@ export interface VaultConnection {
   skipTlsVerify: boolean;
   /** Default KV mount for this connection, e.g. "secret". */
   defaultMount: string;
+  /**
+   * Optional path prefix (relative to the mount) to browse from. Useful for
+   * tokens scoped to a sub-path that cannot list the mount root, e.g. "apps/api".
+   */
+  basePath?: string;
   /** Optional explicit KV engine version override; auto-detected when omitted. */
   kvVersion?: KvVersion;
 }

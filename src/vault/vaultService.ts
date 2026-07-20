@@ -25,9 +25,14 @@ export class VaultService {
   }
 
   /**
-   * Detect the KV engine version for a mount. Uses an explicit override on the
-   * connection first, then a short-lived cache, then the Vault UI mounts
-   * endpoint, and finally a heuristic probe.
+   * Detect the KV engine version for a mount.
+   *
+   * Order of resolution: explicit connection override → cache → the Vault UI
+   * mounts endpoint → a `{mount}/config` probe. Crucially, permission (403)
+   * errors from the sys/config endpoints are tolerated: a token scoped to a
+   * single path can still browse because we fall back to KV v2 (the modern
+   * default) rather than aborting. Set an explicit KV version on the connection
+   * to remove all guessing.
    */
   async detectKvVersion(mount: string): Promise<KvVersion> {
     const key = normalizePath(mount);
@@ -40,19 +45,47 @@ export class VaultService {
     }
 
     let version: KvVersion = 2;
-    const info = await this.api.tryCall<any>("GET", `sys/internal/ui/mounts/${key}`);
+    const info = await this.safePermission(() => this.api.tryCall<any>("GET", `sys/internal/ui/mounts/${key}`));
     const reported = info?.data?.data?.options?.version ?? info?.data?.options?.version;
     if (reported === "1" || reported === 1) {
       version = 1;
     } else if (reported === "2" || reported === 2) {
       version = 2;
     } else {
-      // Heuristic: KV v2 exposes a `{mount}/config` endpoint.
-      const cfg = await this.api.tryCall("GET", `${key}/config`);
-      version = cfg ? 2 : 1;
+      // KV v2 exposes a `{mount}/config` endpoint (200); KV v1 returns 404
+      // (tryCall maps 404 to undefined). If the token lacks permission to probe
+      // (marker), default to v2.
+      const PERMISSION_MARKER = Symbol("permission-denied");
+      const cfg = await this.safePermission(
+        () => this.api.tryCall("GET", `${key}/config`),
+        PERMISSION_MARKER as any
+      );
+      version = cfg === undefined ? 1 : 2;
     }
     this.versionCache.set(key, version);
     return version;
+  }
+
+  /**
+   * Run an API call, swallowing permission-style errors. Returns `fallback`
+   * (default undefined) when the token is not allowed to make the call, so
+   * scoped tokens do not break higher-level operations.
+   */
+  private async safePermission<T>(fn: () => Promise<T>, fallback?: T): Promise<T | undefined> {
+    try {
+      return await fn();
+    } catch (err) {
+      if (
+        err instanceof VaultError &&
+        (err.kind === "unauthorized" ||
+          err.kind === "forbidden" ||
+          err.kind === "tokenExpired" ||
+          err.kind === "namespaceNotFound")
+      ) {
+        return fallback;
+      }
+      throw err;
+    }
   }
 
   /** List immediate children of `path` under `mount`. */
@@ -155,8 +188,16 @@ export class VaultService {
         .filter(([, v]) => (v as any)?.type === "kv" || (v as any)?.type === "generic")
         .map(([k]) => k.replace(/\/+$/, ""));
     } catch (err) {
-      if (err instanceof VaultError && (err.kind === "unauthorized" || err.kind === "tokenExpired")) {
-        // Token may not have sys/mounts access; fall back to the default mount.
+      // A scoped token typically cannot read sys/mounts. Fall back to the
+      // connection's default mount instead of failing the whole browse.
+      if (
+        err instanceof VaultError &&
+        (err.kind === "unauthorized" ||
+          err.kind === "forbidden" ||
+          err.kind === "tokenExpired" ||
+          err.kind === "notFound" ||
+          err.kind === "mountNotFound")
+      ) {
         return this.conn.defaultMount ? [normalizePath(this.conn.defaultMount)] : [];
       }
       throw err;

@@ -27,7 +27,15 @@ before(async () => {
     const url = new URL(req.url ?? "/", "http://localhost");
     const path = url.pathname;
 
-    if (req.headers["x-vault-token"] !== "test-token") {
+    const token = req.headers["x-vault-token"];
+    if (token !== "test-token" && token !== "scoped-token") {
+      return json(res, 403, { errors: ["permission denied"] });
+    }
+
+    // A path-scoped token cannot read sys/* or the KV config endpoint.
+    const isSysOrConfig =
+      path.startsWith("/v1/sys/") || path === "/v1/secret/config";
+    if (token === "scoped-token" && isSysOrConfig) {
       return json(res, 403, { errors: ["permission denied"] });
     }
 
@@ -71,7 +79,7 @@ after(() => {
   server.close();
 });
 
-function makeService(token = "test-token"): VaultService {
+function makeService(token = "test-token", extra: Partial<ResolvedConnection> = {}): VaultService {
   const conn: ResolvedConnection = {
     id: "c1",
     name: "test",
@@ -80,6 +88,7 @@ function makeService(token = "test-token"): VaultService {
     skipTlsVerify: false,
     defaultMount: "secret",
     token,
+    ...extra,
   };
   return new VaultService(conn, 5000);
 }
@@ -124,4 +133,24 @@ test("bad token yields tokenExpired/permission error", async () => {
     () => makeService("wrong").read("secret", "apps/api"),
     (err: any) => err.kind === "tokenExpired" || err.kind === "unauthorized"
   );
+});
+
+test("scoped token can browse despite sys/config 403 (KV detection tolerates it)", async () => {
+  // sys/internal/ui/mounts is under sys/ and returns 403 for the scoped token,
+  // so detection must fall back without throwing.
+  const svc = makeService("scoped-token");
+  const version = await svc.detectKvVersion("secret");
+  assert.equal(version, 2);
+  const entries = await svc.list("secret", "apps");
+  assert.ok(entries.find((e) => e.name === "api"));
+});
+
+test("scoped token listMounts falls back to default mount instead of 403", async () => {
+  const mounts = await makeService("scoped-token").listMounts();
+  assert.deepEqual(mounts, ["secret"]);
+});
+
+test("explicit kvVersion skips detection entirely", async () => {
+  const svc = makeService("scoped-token", { kvVersion: 2 });
+  assert.equal(await svc.detectKvVersion("secret"), 2);
 });

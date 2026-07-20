@@ -75,7 +75,14 @@ export class VaultTreeProvider implements vscode.TreeDataProvider<VaultNode> {
     if (conn) {
       item.description = conn.url.replace(/^https?:\/\//, "");
       item.tooltip = new vscode.MarkdownString(
-        [`**${conn.name}**`, `URL: ${conn.url}`, conn.namespace ? `Namespace: ${conn.namespace}` : undefined, `TLS verify: ${conn.skipTlsVerify ? "off" : "on"}`]
+        [
+          `**${conn.name}**`,
+          `URL: ${conn.url}`,
+          conn.namespace ? `Namespace: ${conn.namespace}` : undefined,
+          conn.defaultMount ? `Mount: ${conn.defaultMount}` : undefined,
+          conn.basePath ? `Path prefix: ${conn.basePath}` : undefined,
+          `TLS verify: ${conn.skipTlsVerify ? "off" : "on"}`,
+        ]
           .filter(Boolean)
           .join("\n\n")
       );
@@ -91,8 +98,10 @@ export class VaultTreeProvider implements vscode.TreeDataProvider<VaultNode> {
       switch (node.kind) {
         case "connection":
           return await this.mountsOf(node.connectionId);
-        case "mount":
-          return await this.listChildren(node.connectionId, node.mount!, "");
+        case "mount": {
+          const base = this.store.get(node.connectionId)?.basePath ?? "";
+          return await this.listChildren(node.connectionId, node.mount!, base);
+        }
         case "folder":
           return await this.listChildren(node.connectionId, node.mount!, node.path!);
         default:

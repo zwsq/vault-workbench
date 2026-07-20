@@ -166,7 +166,10 @@ export function registerCommands(deps: CommandDeps): void {
     if (!node) {
       return;
     }
-    await searchView.prime(node.connectionId, node.mount, node.kind === "folder" ? node.path : "");
+    const conn = store.get(node.connectionId);
+    const mount = node.mount ?? conn?.defaultMount;
+    const startPath = node.kind === "folder" ? node.path : conn?.basePath ?? "";
+    await searchView.prime(node.connectionId, mount, startPath);
   });
 
   reg("vault.focusSearch", async () => {

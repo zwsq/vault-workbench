@@ -71,6 +71,16 @@ export async function promptConnection(existing?: VaultConnection): Promise<Vaul
     return undefined;
   }
 
+  const basePath = await vscode.window.showInputBox({
+    title: "Vault Connection — Path Prefix (optional)",
+    prompt: "Browse from this sub-path if your token is scoped, e.g. apps/api. Leave blank for the mount root.",
+    value: existing?.basePath ?? "",
+    ignoreFocusOut: true,
+  });
+  if (basePath === undefined) {
+    return undefined;
+  }
+
   const kvPick = await vscode.window.showQuickPick(
     [
       { label: "Auto-detect", value: undefined as 1 | 2 | undefined },
@@ -105,6 +115,7 @@ export async function promptConnection(existing?: VaultConnection): Promise<Vaul
     authMethod: "token",
     namespace: namespace.trim() || undefined,
     defaultMount: defaultMount.trim(),
+    basePath: basePath.trim() || undefined,
     skipTlsVerify: tlsPick.value,
     kvVersion: kvPick.value,
   };
