@@ -50,7 +50,7 @@ export class VaultTreeProvider implements vscode.TreeDataProvider<VaultNode> {
         const item = new vscode.TreeItem(node.label, vscode.TreeItemCollapsibleState.Collapsed);
         item.iconPath = vscode.ThemeIcon.Folder;
         item.contextValue = "vaultFolder";
-        item.resourceUri = vscode.Uri.parse(`vaultpath:/${node.mount}/${node.path}`);
+        item.tooltip = `${node.mount}/${node.path}`;
         return item;
       }
       case "secret": {

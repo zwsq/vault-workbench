@@ -80,7 +80,7 @@ export function classifyVaultError(params: {
 
   switch (status) {
     case 400:
-      if (detail.includes("version") && detail.includes("mismatch")) {
+      if (isCasConflict(detail)) {
         return new VaultError("versionConflict", "The secret changed since you last read it (version conflict).", { statusCode: status, path });
       }
       return new VaultError("badRequest", "Vault rejected the request.", { statusCode: status, path });
@@ -105,6 +105,15 @@ export function classifyVaultError(params: {
       }
   }
   return new VaultError("unknown", "An unexpected Vault error occurred.", { statusCode: status, path });
+}
+
+function isCasConflict(detail: string): boolean {
+  return (
+    detail.includes("check-and-set") ||
+    detail.includes("did not match the current version") ||
+    (detail.includes("cas") && detail.includes("version")) ||
+    (detail.includes("version") && detail.includes("mismatch"))
+  );
 }
 
 function isTlsErrorCode(code: string): boolean {

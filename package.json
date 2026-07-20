@@ -246,8 +246,7 @@
     "watch": "node esbuild.js --watch",
     "check-types": "tsc --noEmit",
     "lint": "eslint src --ext ts",
-    "test:unit": "tsc -p tsconfig.test.json && node --test ./out-test/**/*.test.js",
-    "pretest": "npm run compile"
+    "test:unit": "tsc -p tsconfig.test.json && node --test \"out-test/test/*.test.js\""
   },
   "devDependencies": {
     "@types/node": "^20.14.0",

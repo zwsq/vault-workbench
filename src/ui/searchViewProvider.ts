@@ -254,7 +254,7 @@ export class SearchViewProvider implements vscode.WebviewViewProvider {
     return this.currentResults;
   }
 
-  private async exportResults(format: "json" | "csv"): Promise<void> {
+  async exportResults(format: "json" | "csv"): Promise<void> {
     if (this.currentResults.length === 0) {
       vscode.window.showInformationMessage("Vault: no search results to export.");
       return;

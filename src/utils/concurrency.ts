@@ -31,7 +31,7 @@ export async function mapConcurrent<T, R>(
   let next = 0;
 
   async function run(): Promise<void> {
-    while (true) {
+    for (;;) {
       if (token?.isCancellationRequested) {
         return;
       }
