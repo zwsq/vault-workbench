@@ -19,7 +19,8 @@ body {
 }
 
 select,
-input[type="text"] {
+input[type="text"],
+textarea {
   flex: 1;
   min-width: 0;
   padding: 4px 6px;
@@ -28,11 +29,25 @@ input[type="text"] {
   border: 1px solid var(--vscode-input-border, transparent);
   border-radius: 2px;
   outline: none;
+  font-family: var(--vscode-font-family);
+  font-size: var(--vscode-font-size);
+}
+
+textarea {
+  resize: vertical;
+  overflow-y: auto;
+  white-space: pre;
+  line-height: 1.4;
 }
 
 input[type="text"]:focus,
-select:focus {
+select:focus,
+textarea:focus {
   border-color: var(--vscode-focusBorder);
+}
+
+.query-row {
+  align-items: flex-start;
 }
 
 .options {

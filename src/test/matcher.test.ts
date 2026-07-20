@@ -43,6 +43,40 @@ test("invalid regex throws", () => {
   assert.throws(() => buildMatcher("(", { ...base, regex: true }));
 });
 
+test("multi-line literal is whitespace-flexible (indentation-insensitive)", () => {
+  const doc = [
+    "{",
+    '  "logging": {',
+    '    "sinks": [',
+    "      {",
+    '        "Args": {',
+    '          "formatter": "ElasticsearchJsonFormatter"',
+    "        },",
+    '        "Name": "Console"',
+    "      }",
+    "    ]",
+    "  }",
+    "}",
+  ].join("\n");
+  // Query pasted with DIFFERENT indentation than the document.
+  const query = [
+    "{",
+    '  "Args": {',
+    '    "formatter": "ElasticsearchJsonFormatter"',
+    "  },",
+    '  "Name": "Console"',
+    "}",
+  ].join("\n");
+  const m = buildMatcher(query, { ...base });
+  assert.equal(hasMatch(m, doc), true);
+});
+
+test("single-line literal remains exact (whitespace significant)", () => {
+  const m = buildMatcher("a b", { ...base });
+  assert.equal(hasMatch(m, "a  b"), false); // two spaces should not match one
+  assert.equal(hasMatch(buildMatcher("a b", { ...base }), "a b"), true);
+});
+
 test("zero-width matches do not loop forever", () => {
   const opts = { ...base, regex: true };
   const m = buildMatcher("x*", opts);

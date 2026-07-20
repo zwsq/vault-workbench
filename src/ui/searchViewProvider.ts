@@ -5,8 +5,11 @@ import { BackupStore } from "../storage/backupStore";
 import { Logger, summarizeError } from "../utils/logger";
 import { getConfig, VaultServiceFactory } from "../vault/vaultServiceFactory";
 import { SearchEngine } from "../search/searchEngine";
-import { ReplaceEngine } from "../replace/replaceEngine";
+import { ReplaceEngine, applyMatchesToDocument } from "../replace/replaceEngine";
 import { VaultFileSystemProvider } from "../editors/vaultFileSystemProvider";
+import { ReplacePreviewProvider } from "../editors/replacePreviewProvider";
+import { buildMatcher } from "../search/matcher";
+import { renderSecretDocument, scanDocument } from "../search/document";
 import { getNonce } from "./nonce";
 
 /** Messages sent from the webview to the extension. */
@@ -16,7 +19,7 @@ type InMessage =
   | { type: "search"; request: WireSearchRequest }
   | { type: "cancel" }
   | { type: "replace"; query: string; replacement: string; options: SearchOptions; mount: string; includedPaths: string[] }
-  | { type: "openSecret"; mount: string; secretPath: string; selection?: MatchSelection }
+  | { type: "openSecret"; mount: string; secretPath: string; selection?: MatchSelection; replacement?: string }
   | { type: "export"; format: "json" | "csv" };
 
 interface MatchSelection {
@@ -54,6 +57,7 @@ export class SearchViewProvider implements vscode.WebviewViewProvider {
     private readonly factory: VaultServiceFactory,
     private readonly backups: BackupStore,
     private readonly fsProvider: VaultFileSystemProvider,
+    private readonly previewProvider: ReplacePreviewProvider,
     private readonly logger: Logger
   ) {}
 
@@ -104,7 +108,7 @@ export class SearchViewProvider implements vscode.WebviewViewProvider {
           await this.runReplace(msg);
           break;
         case "openSecret":
-          await this.openSecret(msg.mount, msg.secretPath, msg.selection);
+          await this.openSecret(msg.mount, msg.secretPath, msg.selection, msg.replacement);
           break;
         case "export":
           await this.exportResults(msg.format);
@@ -245,12 +249,28 @@ export class SearchViewProvider implements vscode.WebviewViewProvider {
     );
   }
 
-  private async openSecret(mount: string, secretPath: string, selection?: MatchSelection): Promise<void> {
+  private async openSecret(
+    mount: string,
+    secretPath: string,
+    selection?: MatchSelection,
+    replacement?: string
+  ): Promise<void> {
     if (!this.currentRequest) {
       return;
     }
-    const uri = VaultFileSystemProvider.buildUri(this.currentRequest.scope.connectionId, mount, secretPath);
+    const connectionId = this.currentRequest.scope.connectionId;
+    const uri = VaultFileSystemProvider.buildUri(connectionId, mount, secretPath);
     void this.fsProvider; // provider is registered globally; open via workspace
+
+    // With a replacement present, show a live diff (current vs proposed) so the
+    // change is visible in an editor before anything is written.
+    if (replacement && replacement.length > 0) {
+      const opened = await this.openReplaceDiff(connectionId, mount, secretPath, uri, replacement);
+      if (opened) {
+        return;
+      }
+    }
+
     const doc = await vscode.workspace.openTextDocument(uri);
     await vscode.languages.setTextDocumentLanguage(doc, "json");
     const editor = await vscode.window.showTextDocument(doc, { preview: true });
@@ -264,6 +284,41 @@ export class SearchViewProvider implements vscode.WebviewViewProvider {
       editor.selection = new vscode.Selection(range.start, range.end);
       editor.revealRange(range, vscode.TextEditorRevealType.InCenterIfOutsideViewport);
     }
+  }
+
+  /** Open a diff of the secret's current content vs the proposed replacement. */
+  private async openReplaceDiff(
+    connectionId: string,
+    mount: string,
+    secretPath: string,
+    originalUri: vscode.Uri,
+    replacement: string
+  ): Promise<boolean> {
+    if (!this.currentRequest) {
+      return false;
+    }
+    const service = await this.factory.create(connectionId);
+    const record = await service.read(mount, secretPath);
+    if (!record) {
+      return false;
+    }
+    const document = renderSecretDocument(record.data);
+    const matcher = buildMatcher(this.currentRequest.query, this.currentRequest.options);
+    const matches = scanDocument(document, matcher, this.currentRequest.options);
+    const proposed = applyMatchesToDocument(document, matches, matcher, replacement, this.currentRequest.options);
+    if (proposed === document) {
+      return false; // nothing would change; fall back to plain open
+    }
+    const previewUri = ReplacePreviewProvider.buildUri(connectionId, mount, secretPath);
+    this.previewProvider.set(previewUri, proposed);
+    await vscode.commands.executeCommand(
+      "vscode.diff",
+      originalUri,
+      previewUri,
+      `${secretPath} — Replace Preview (right is proposed)`,
+      { preview: true }
+    );
+    return true;
   }
 
   getResults(): SecretMatches[] {
@@ -304,7 +359,7 @@ export class SearchViewProvider implements vscode.WebviewViewProvider {
   </div>
 
   <div class="query-row">
-    <input id="query" type="text" placeholder="Search" />
+    <textarea id="query" rows="1" placeholder="Search (paste multi-line blocks; Ctrl+Enter to search)"></textarea>
     <div class="options">
       <button data-opt="matchCase" title="Match Case">Aa</button>
       <button data-opt="wholeWord" title="Whole Word">ab|</button>
@@ -313,7 +368,7 @@ export class SearchViewProvider implements vscode.WebviewViewProvider {
   </div>
 
   <div class="query-row">
-    <input id="replacement" type="text" placeholder="Replace" />
+    <textarea id="replacement" rows="1" placeholder="Replace"></textarea>
     <div class="options">
       <button id="replaceBtn" class="primary" title="Replace in all checked secrets">Replace All</button>
     </div>

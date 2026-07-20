@@ -55,14 +55,27 @@
   el.searchBtn.addEventListener("click", doSearch);
   el.cancelBtn.addEventListener("click", () => vscode.postMessage({ type: "cancel" }));
   el.replaceBtn.addEventListener("click", doReplace);
+  // Ctrl/Cmd+Enter searches; plain Enter inserts a newline (for pasting blocks).
   el.query.addEventListener("keydown", (e) => {
-    if (e.key === "Enter") doSearch();
+    if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) {
+      e.preventDefault();
+      doSearch();
+    }
   });
   // Live inline diff as the user edits the replace field (no re-search needed).
   el.replacement.addEventListener("input", rerenderAllMatches);
+  autoGrow(el.query);
+  autoGrow(el.replacement);
+  el.query.addEventListener("input", () => autoGrow(el.query));
+  el.replacement.addEventListener("input", () => autoGrow(el.replacement));
   el.connection.addEventListener("change", () =>
     vscode.postMessage({ type: "selectConnection", id: el.connection.value })
   );
+
+  function autoGrow(area) {
+    area.style.height = "auto";
+    area.style.height = Math.min(area.scrollHeight, 200) + "px";
+  }
 
   function doSearch() {
     groups.clear();
@@ -112,7 +125,14 @@
   /** Build a matcher identical to the extension's, or null if invalid. */
   function buildMatcher(query, o) {
     try {
-      let src = o.regex ? query : escapeRegExp(query);
+      let src;
+      if (o.regex) {
+        src = query;
+      } else if (/[\r\n]/.test(query)) {
+        src = query.replace(/^\s+|\s+$/g, "").split(/\s+/).map(escapeRegExp).join("\\s+");
+      } else {
+        src = escapeRegExp(query);
+      }
       if (o.wholeWord) src = "\\b(?:" + src + ")\\b";
       return new RegExp(src, "g" + (o.matchCase ? "" : "i"));
     } catch {
@@ -162,6 +182,7 @@
         type: "openSecret",
         mount: el.mount.value,
         secretPath: result.secretPath,
+        replacement: el.replacement.value,
         selection: {
           startLine: match.startLine,
           startChar: match.startChar,
