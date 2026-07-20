@@ -137,12 +137,37 @@ button.primary:hover {
 .match-line {
   display: flex;
   gap: 6px;
+  align-items: baseline;
   padding: 1px 4px 1px 22px;
   cursor: pointer;
   border-radius: 2px;
+  overflow: hidden;
+}
+
+.match-line .code {
+  font-family: var(--vscode-editor-font-family, monospace);
+  font-size: var(--vscode-editor-font-size, 12px);
   white-space: pre;
   overflow: hidden;
   text-overflow: ellipsis;
+  flex: 1;
+  min-width: 0;
+}
+
+.match-line del {
+  text-decoration: line-through;
+  background: var(--vscode-diffEditor-removedTextBackground, rgba(255, 0, 0, 0.2));
+  color: var(--vscode-foreground);
+}
+
+.match-line ins {
+  text-decoration: none;
+  background: var(--vscode-diffEditor-insertedTextBackground, rgba(0, 200, 0, 0.2));
+  color: var(--vscode-foreground);
+}
+
+.ellipsis {
+  opacity: 0.6;
 }
 
 .match-line:hover {

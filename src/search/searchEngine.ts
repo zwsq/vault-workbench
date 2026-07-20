@@ -1,9 +1,9 @@
-import { SearchMatch, SearchOptions, SearchRequest, SecretMatches } from "../models/search";
-import { SecretData } from "../models/secret";
+import { SearchRequest, SecretMatches } from "../models/search";
 import { CancellationLike, mapConcurrent, throwIfCancelled } from "../utils/concurrency";
 import { joinPath } from "../utils/paths";
 import { VaultService } from "../vault/vaultService";
-import { buildMatcher, findRanges } from "./matcher";
+import { buildMatcher } from "./matcher";
+import { renderSecretDocument, scanDocument } from "./document";
 
 export interface SearchProgress {
   /** Number of secrets discovered so far during enumeration. */
@@ -50,7 +50,8 @@ export class SearchEngine {
         const record = await this.service.read(request.scope.mount, secretPath);
         progress.scanned++;
         if (record && !record.deleted) {
-          const matches = scanSecret(secretPath, record.data, matcher, request.options);
+          const document = renderSecretDocument(record.data);
+          const matches = scanDocument(document, matcher, request.options);
           if (matches.length > 0) {
             const grouped: SecretMatches = { secretPath, matches };
             results.push(grouped);
@@ -103,44 +104,4 @@ export class SearchEngine {
     }
     return secrets.map((p) => joinPath(p)).sort();
   }
-}
-
-/** Scan a single secret's key/value pairs for matches. */
-export function scanSecret(
-  secretPath: string,
-  data: SecretData,
-  matcher: RegExp,
-  options: SearchOptions
-): SearchMatch[] {
-  const matches: SearchMatch[] = [];
-  for (const [key, value] of Object.entries(data)) {
-    if (options.searchKeys) {
-      const ranges = findRanges(matcher, key);
-      if (ranges.length > 0) {
-        matches.push({ secretPath, key, location: "key", original: key, ranges });
-      }
-    }
-    if (options.searchValues) {
-      const str = stringifyValue(value);
-      const ranges = findRanges(matcher, str);
-      if (ranges.length > 0) {
-        matches.push({ secretPath, key, location: "value", original: str, ranges });
-      }
-    }
-  }
-  return matches;
-}
-
-/** Convert a secret value into a searchable string. */
-export function stringifyValue(value: unknown): string {
-  if (typeof value === "string") {
-    return value;
-  }
-  if (value === null || value === undefined) {
-    return "";
-  }
-  if (typeof value === "object") {
-    return JSON.stringify(value);
-  }
-  return String(value);
 }

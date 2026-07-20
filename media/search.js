@@ -15,14 +15,17 @@
     searchValues: /** @type {HTMLInputElement} */ (document.getElementById("searchValues")),
     searchBtn: /** @type {HTMLButtonElement} */ (document.getElementById("searchBtn")),
     cancelBtn: /** @type {HTMLButtonElement} */ (document.getElementById("cancelBtn")),
-    previewBtn: /** @type {HTMLButtonElement} */ (document.getElementById("previewBtn")),
     replaceBtn: /** @type {HTMLButtonElement} */ (document.getElementById("replaceBtn")),
     status: /** @type {HTMLDivElement} */ (document.getElementById("status")),
     results: /** @type {HTMLDivElement} */ (document.getElementById("results")),
   };
 
-  /** @type {Map<string, {secretPath: string, matches: any[]}>} */
-  const resultsMap = new Map();
+  /** @type {Map<string, {result: any, groupEl: HTMLElement, checkbox: HTMLInputElement}>} */
+  const groups = new Map();
+
+  // The query/options that produced the current results (used for replace preview).
+  let lastQuery = "";
+  let lastOptions = currentOptions();
 
   function currentOptions() {
     return {
@@ -51,25 +54,21 @@
 
   el.searchBtn.addEventListener("click", doSearch);
   el.cancelBtn.addEventListener("click", () => vscode.postMessage({ type: "cancel" }));
-  el.previewBtn.addEventListener("click", () =>
-    vscode.postMessage({
-      type: "preview",
-      query: el.query.value,
-      replacement: el.replacement.value,
-      options: currentOptions(),
-    })
-  );
   el.replaceBtn.addEventListener("click", doReplace);
   el.query.addEventListener("keydown", (e) => {
     if (e.key === "Enter") doSearch();
   });
+  // Live inline diff as the user edits the replace field (no re-search needed).
+  el.replacement.addEventListener("input", rerenderAllMatches);
   el.connection.addEventListener("change", () =>
     vscode.postMessage({ type: "selectConnection", id: el.connection.value })
   );
 
   function doSearch() {
-    resultsMap.clear();
+    groups.clear();
     el.results.innerHTML = "";
+    lastQuery = el.query.value;
+    lastOptions = currentOptions();
     vscode.postMessage({
       type: "search",
       request: {
@@ -84,94 +83,142 @@
   }
 
   function doReplace() {
-    const includedPaths = Array.from(resultsMap.keys());
+    const includedPaths = [];
+    for (const [path, g] of groups) {
+      if (g.checkbox.checked) includedPaths.push(path);
+    }
     if (includedPaths.length === 0) {
-      setStatus("Run a search first.", true);
+      setStatus("Nothing selected to replace.", true);
       return;
     }
     vscode.postMessage({
       type: "replace",
-      query: el.query.value,
+      query: lastQuery,
       replacement: el.replacement.value,
-      options: currentOptions(),
+      options: lastOptions,
       mount: el.mount.value,
       includedPaths,
     });
   }
 
   function escapeHtml(s) {
-    return s.replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+    return String(s).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
   }
 
-  /** Highlight ranges [start,end) inside text. */
-  function highlight(text, ranges) {
-    if (!ranges || ranges.length === 0) return escapeHtml(text);
-    let out = "";
-    let last = 0;
-    for (const [start, end] of ranges) {
-      out += escapeHtml(text.slice(last, start));
-      out += "<mark>" + escapeHtml(text.slice(start, end)) + "</mark>";
-      last = end;
+  function escapeRegExp(input) {
+    return input.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  }
+
+  /** Build a matcher identical to the extension's, or null if invalid. */
+  function buildMatcher(query, o) {
+    try {
+      let src = o.regex ? query : escapeRegExp(query);
+      if (o.wholeWord) src = "\\b(?:" + src + ")\\b";
+      return new RegExp(src, "g" + (o.matchCase ? "" : "i"));
+    } catch {
+      return null;
     }
-    out += escapeHtml(text.slice(last));
-    return out;
+  }
+
+  function applyReplacement(re, text, replacement, o) {
+    re.lastIndex = 0;
+    if (o.regex) return text.replace(re, replacement);
+    return text.replace(re, replacement.replace(/\$/g, "$$$$"));
+  }
+
+  /** Render a single match line: highlight, or inline before/after diff when replacing. */
+  function renderMatchLineHtml(match) {
+    const line = match.lineText;
+    const before = escapeHtml(line.slice(0, match.lineMatchStart));
+    const matched = line.slice(match.lineMatchStart, match.lineMatchEnd);
+    const after = escapeHtml(line.slice(match.lineMatchEnd));
+    const replacement = el.replacement.value;
+    const isMulti = match.startLine !== match.endLine;
+
+    if (!replacement) {
+      const shown = escapeHtml(matched) + (isMulti ? "<span class='ellipsis'> …</span>" : "");
+      return before + "<mark>" + shown + "</mark>" + after;
+    }
+
+    const re = buildMatcher(lastQuery, lastOptions);
+    if (!re) {
+      return before + "<mark>" + escapeHtml(matched) + "</mark>" + after;
+    }
+    const newFull = applyReplacement(re, match.matchText, replacement, lastOptions);
+    const oldShown = escapeHtml(matched) + (isMulti ? " …" : "");
+    const newShown = escapeHtml(isMulti ? newFull.split("\n")[0] + " …" : newFull);
+    return before + "<del>" + oldShown + "</del><ins>" + newShown + "</ins>" + after;
+  }
+
+  function makeMatchRow(result, match) {
+    const row = document.createElement("div");
+    row.className = "match-line";
+    row.innerHTML =
+      '<span class="badge">' + match.location + "</span>" +
+      '<span class="code">' + renderMatchLineHtml(match) + "</span>";
+    row.title = "Line " + (match.startLine + 1) + " — click to open at this match";
+    row.addEventListener("click", () =>
+      vscode.postMessage({
+        type: "openSecret",
+        mount: el.mount.value,
+        secretPath: result.secretPath,
+        selection: {
+          startLine: match.startLine,
+          startChar: match.startChar,
+          endLine: match.endLine,
+          endChar: match.endChar,
+        },
+      })
+    );
+    return row;
   }
 
   function renderResult(result) {
-    resultsMap.set(result.secretPath, result);
     const group = document.createElement("div");
     group.className = "secret-group";
 
     const header = document.createElement("div");
     header.className = "secret-header";
-    header.innerHTML =
-      '<span class="path">' + escapeHtml(result.secretPath) + "</span>" +
-      '<span class="count">' + result.matches.length + "</span>";
+    const checkbox = document.createElement("input");
+    checkbox.type = "checkbox";
+    checkbox.checked = true;
+    checkbox.title = "Include in Replace All";
+    checkbox.addEventListener("click", (e) => e.stopPropagation());
+    header.appendChild(checkbox);
+
+    const pathSpan = document.createElement("span");
+    pathSpan.className = "path";
+    pathSpan.textContent = result.secretPath;
+    header.appendChild(pathSpan);
+
+    const count = document.createElement("span");
+    count.className = "count";
+    count.textContent = String(result.matches.length);
+    header.appendChild(count);
     group.appendChild(header);
 
     const body = document.createElement("div");
+    body.className = "match-body";
     for (const m of result.matches) {
-      const line = document.createElement("div");
-      line.className = "match-line";
-      line.innerHTML =
-        '<span class="badge">' + m.location + '</span>' +
-        '<span class="key">' + escapeHtml(m.key) + ":</span> " +
-        "<span>" + highlight(m.original, m.ranges) + "</span>";
-      line.addEventListener("click", () =>
-        vscode.postMessage({ type: "openSecret", mount: el.mount.value, secretPath: result.secretPath })
-      );
-      body.appendChild(line);
+      body.appendChild(makeMatchRow(result, m));
     }
     group.appendChild(body);
 
     header.addEventListener("click", () => body.classList.toggle("hidden"));
     el.results.appendChild(group);
+    groups.set(result.secretPath, { result, groupEl: group, checkbox });
   }
 
-  function renderPreviews(previews) {
-    const existing = document.getElementById("previewBox");
-    if (existing) existing.remove();
-    const box = document.createElement("div");
-    box.id = "previewBox";
-    box.className = "preview";
-    if (previews.length === 0) {
-      box.innerHTML = "<h3>No replacements would change anything.</h3>";
-    } else {
-      let html = "<h3>" + previews.length + " replacement(s) preview</h3>";
-      for (const p of previews.slice(0, 200)) {
-        html +=
-          '<div class="preview-item">' +
-          '<div class="path">' + escapeHtml(p.secretPath) + " › " + escapeHtml(p.key) + " (" + p.location + ")</div>" +
-          '<div class="diff-old">- ' + escapeHtml(p.before) + "</div>" +
-          '<div class="diff-new">+ ' + escapeHtml(p.after) + "</div>" +
-          "</div>";
+  /** Re-render match rows (e.g. after the replace field changes) without re-searching. */
+  function rerenderAllMatches() {
+    for (const { result, groupEl } of groups.values()) {
+      const body = groupEl.querySelector(".match-body");
+      if (!body) continue;
+      body.innerHTML = "";
+      for (const m of result.matches) {
+        body.appendChild(makeMatchRow(result, m));
       }
-      if (previews.length > 200) {
-        html += "<div class='path'>…and " + (previews.length - 200) + " more</div>";
-      }
-      box.innerHTML = html;
     }
-    el.results.prepend(box);
   }
 
   function fillSelect(select, items, selectedValue) {
@@ -190,7 +237,7 @@
     switch (msg.type) {
       case "connections": {
         const items = msg.connections.map((c) => ({ value: c.id, label: c.name }));
-        const preferred = (msg.connections.find((c) => c.name === msg.defaultConnection) || msg.connections[0]);
+        const preferred = msg.connections.find((c) => c.name === msg.defaultConnection) || msg.connections[0];
         fillSelect(el.connection, items, preferred ? preferred.id : undefined);
         if (preferred) vscode.postMessage({ type: "selectConnection", id: preferred.id });
         break;
@@ -198,16 +245,13 @@
       case "mounts": {
         if (el.connection.value !== msg.connectionId) break;
         const items = msg.mounts.map((m) => ({ value: m, label: m }));
-        fillSelect(el.mount, items, msg.defaultMount || (msg.mounts[0] || ""));
+        fillSelect(el.mount, items, msg.defaultMount || msg.mounts[0] || "");
         break;
       }
       case "prime": {
         if (msg.connectionId) el.connection.value = msg.connectionId;
         if (msg.startPath) el.startPath.value = msg.startPath;
-        if (msg.mount) {
-          // mount options may arrive later; set once available
-          setTimeout(() => { if (msg.mount) el.mount.value = msg.mount; }, 100);
-        }
+        if (msg.mount) setTimeout(() => { if (msg.mount) el.mount.value = msg.mount; }, 100);
         el.query.focus();
         break;
       }
@@ -228,9 +272,6 @@
         el.searchBtn.hidden = false;
         el.cancelBtn.hidden = true;
         setStatus((msg.cancelled ? "Cancelled — " : "") + msg.count + " secret(s) matched.");
-        break;
-      case "previews":
-        renderPreviews(msg.previews);
         break;
       case "replaceDone":
         setStatus(

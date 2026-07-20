@@ -3,6 +3,7 @@ import { getConfig, VaultServiceFactory } from "../vault/vaultServiceFactory";
 import { Logger, summarizeError } from "../utils/logger";
 import { ReadOnlyError, VaultError } from "../utils/errors";
 import { normalizePath } from "../utils/paths";
+import { renderSecretDocument } from "../search/document";
 
 export const VAULT_SCHEME = "vault";
 
@@ -80,7 +81,7 @@ export class VaultFileSystemProvider implements vscode.FileSystemProvider {
       throw vscode.FileSystemError.FileNotFound(uri);
     }
     this.versions.set(uri.toString(), record.version);
-    const text = JSON.stringify(record.data, null, 2) + "\n";
+    const text = renderSecretDocument(record.data);
     const bytes = Buffer.from(text, "utf8");
     this.sizes.set(uri.toString(), bytes.length);
     return bytes;

@@ -15,10 +15,16 @@ type InMessage =
   | { type: "selectConnection"; id: string }
   | { type: "search"; request: WireSearchRequest }
   | { type: "cancel" }
-  | { type: "preview"; query: string; replacement: string; options: SearchOptions }
   | { type: "replace"; query: string; replacement: string; options: SearchOptions; mount: string; includedPaths: string[] }
-  | { type: "openSecret"; mount: string; secretPath: string }
+  | { type: "openSecret"; mount: string; secretPath: string; selection?: MatchSelection }
   | { type: "export"; format: "json" | "csv" };
+
+interface MatchSelection {
+  startLine: number;
+  startChar: number;
+  endLine: number;
+  endChar: number;
+}
 
 interface WireSearchRequest {
   query: string;
@@ -94,14 +100,11 @@ export class SearchViewProvider implements vscode.WebviewViewProvider {
         case "cancel":
           this.cancelSource?.cancel();
           break;
-        case "preview":
-          await this.runPreview(msg.query, msg.replacement, msg.options);
-          break;
         case "replace":
           await this.runReplace(msg);
           break;
         case "openSecret":
-          await this.openSecret(msg.mount, msg.secretPath);
+          await this.openSecret(msg.mount, msg.secretPath, msg.selection);
           break;
         case "export":
           await this.exportResults(msg.format);
@@ -175,16 +178,6 @@ export class SearchViewProvider implements vscode.WebviewViewProvider {
     }
   }
 
-  private async runPreview(query: string, replacement: string, options: SearchOptions): Promise<void> {
-    if (!this.currentRequest) {
-      return;
-    }
-    const service = await this.factory.create(this.currentRequest.scope.connectionId);
-    const engine = new ReplaceEngine(service);
-    const previews = engine.computePreviews(this.currentResults, query, replacement, options);
-    this.post({ type: "previews", previews });
-  }
-
   private async runReplace(msg: Extract<InMessage, { type: "replace" }>): Promise<void> {
     if (!this.currentRequest) {
       return;
@@ -194,6 +187,19 @@ export class SearchViewProvider implements vscode.WebviewViewProvider {
       this.post({ type: "error", message: "Read-only mode is enabled; writes are disabled." });
       return;
     }
+
+    // Nothing is written before this explicit confirmation.
+    const count = msg.includedPaths.length;
+    const backupNote = cfg.backupBeforeReplace ? " A backup of each secret will be saved first." : "";
+    const confirm = await vscode.window.showWarningMessage(
+      `Replace matches in ${count} secret(s)?${backupNote}`,
+      { modal: true, detail: "This writes changes back to Vault. Review the inline diffs before confirming." },
+      "Replace All"
+    );
+    if (confirm !== "Replace All") {
+      return;
+    }
+
     const connectionId = this.currentRequest.scope.connectionId;
     const service = await this.factory.create(connectionId);
     const engine = new ReplaceEngine(service);
@@ -239,7 +245,7 @@ export class SearchViewProvider implements vscode.WebviewViewProvider {
     );
   }
 
-  private async openSecret(mount: string, secretPath: string): Promise<void> {
+  private async openSecret(mount: string, secretPath: string, selection?: MatchSelection): Promise<void> {
     if (!this.currentRequest) {
       return;
     }
@@ -247,7 +253,17 @@ export class SearchViewProvider implements vscode.WebviewViewProvider {
     void this.fsProvider; // provider is registered globally; open via workspace
     const doc = await vscode.workspace.openTextDocument(uri);
     await vscode.languages.setTextDocumentLanguage(doc, "json");
-    await vscode.window.showTextDocument(doc, { preview: true });
+    const editor = await vscode.window.showTextDocument(doc, { preview: true });
+    if (selection) {
+      const range = new vscode.Range(
+        selection.startLine,
+        selection.startChar,
+        selection.endLine,
+        selection.endChar
+      );
+      editor.selection = new vscode.Selection(range.start, range.end);
+      editor.revealRange(range, vscode.TextEditorRevealType.InCenterIfOutsideViewport);
+    }
   }
 
   getResults(): SecretMatches[] {
@@ -299,8 +315,7 @@ export class SearchViewProvider implements vscode.WebviewViewProvider {
   <div class="query-row">
     <input id="replacement" type="text" placeholder="Replace" />
     <div class="options">
-      <button id="previewBtn" title="Preview replacements">Preview</button>
-      <button id="replaceBtn" class="primary" title="Replace All">Replace All</button>
+      <button id="replaceBtn" class="primary" title="Replace in all checked secrets">Replace All</button>
     </div>
   </div>
 
@@ -331,13 +346,14 @@ function exportJson(results: SecretMatches[]): string {
 }
 
 function exportCsv(results: SecretMatches[]): string {
-  const rows: string[] = ["secretPath,key,location,match"];
+  const rows: string[] = ["secretPath,line,location,match"];
   for (const group of results) {
     for (const match of group.matches) {
-      for (const [start, end] of match.ranges) {
-        const excerpt = match.original.slice(start, end);
-        rows.push([group.secretPath, match.key, match.location, excerpt].map(csvEscape).join(","));
-      }
+      rows.push(
+        [group.secretPath, String(match.startLine + 1), match.location, match.matchText]
+          .map(csvEscape)
+          .join(",")
+      );
     }
   }
   return rows.join("\n");

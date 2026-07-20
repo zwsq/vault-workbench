@@ -4,6 +4,7 @@ import { CancellationLike, throwIfCancelled } from "../utils/concurrency";
 import { ReadOnlyError, VaultError } from "../utils/errors";
 import { VaultService } from "../vault/vaultService";
 import { applyReplacement, buildMatcher } from "../search/matcher";
+import { renderSecretDocument, scanDocument } from "../search/document";
 
 export interface ReplaceReport {
   succeeded: number;
@@ -34,13 +35,19 @@ export interface BatchProgress {
 
 /**
  * Generates non-destructive replacement previews and applies confirmed batch
- * replacements. Reads are always performed fresh at write time so KV v2
+ * replacements.
+ *
+ * Replacement is performed on the secret's rendered JSON document (the exact
+ * text shown in the editor): matched ranges are spliced with their replacement
+ * and the result is re-parsed as JSON. This naturally supports value edits, key
+ * renames, and multi-line/nested changes, and guarantees the write reflects
+ * precisely what the user saw. Reads happen fresh at write time so KV v2
  * check-and-set can detect concurrent modifications.
  */
 export class ReplaceEngine {
   constructor(private readonly service: VaultService) {}
 
-  /** Compute previews for every match. Nothing is written. */
+  /** Compute per-match previews from the already-found matches. Nothing is written. */
   computePreviews(
     results: SecretMatches[],
     query: string,
@@ -51,13 +58,13 @@ export class ReplaceEngine {
     const previews: ReplacePreview[] = [];
     for (const group of results) {
       for (const match of group.matches) {
-        const after = applyReplacement(matcher, match.original, replacement, options);
-        if (after !== match.original) {
+        const after = applyReplacement(matcher, match.matchText, replacement, options);
+        if (after !== match.matchText) {
           previews.push({
             secretPath: group.secretPath,
-            key: match.key,
+            startLine: match.startLine,
             location: match.location,
-            before: match.original,
+            before: match.matchText,
             after,
           });
         }
@@ -67,8 +74,9 @@ export class ReplaceEngine {
   }
 
   /**
-   * Apply replacements to selected secrets. Continues past individual failures
-   * and returns an aggregate report.
+   * Apply replacements to selected secrets. Re-reads and re-scans each secret at
+   * write time, continues past individual failures, and returns an aggregate
+   * report.
    */
   async applyBatch(
     results: SecretMatches[],
@@ -80,10 +88,9 @@ export class ReplaceEngine {
       throw new ReadOnlyError();
     }
     const report: ReplaceReport = { succeeded: 0, skipped: 0, failed: 0, failures: [] };
-    const matcher = buildMatcher(opts.query, opts.options);
-
     const targets = results.filter((r) => opts.includedPaths.has(r.secretPath));
     let processed = 0;
+
     for (const group of targets) {
       throwIfCancelled(token);
       processed++;
@@ -92,6 +99,36 @@ export class ReplaceEngine {
         const record = await this.service.read(opts.mount, group.secretPath);
         if (!record || record.deleted) {
           report.skipped++;
+          continue;
+        }
+
+        const document = renderSecretDocument(record.data);
+        const matcher = buildMatcher(opts.query, opts.options);
+        const matches = scanDocument(document, matcher, opts.options);
+        if (matches.length === 0) {
+          report.skipped++;
+          continue;
+        }
+
+        const nextText = applyMatchesToDocument(document, matches, matcher, opts.replacement, opts.options);
+        if (nextText === document) {
+          report.skipped++;
+          continue;
+        }
+
+        let newData: SecretData;
+        try {
+          const parsed = JSON.parse(nextText);
+          if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) {
+            throw new Error("not an object");
+          }
+          newData = parsed;
+        } catch {
+          report.failed++;
+          report.failures.push({
+            secretPath: group.secretPath,
+            message: "Replacement produced invalid JSON; skipped for safety.",
+          });
           continue;
         }
 
@@ -105,18 +142,6 @@ export class ReplaceEngine {
             timestamp: new Date().toISOString(),
             data: record.data,
           });
-        }
-
-        const { data: newData, changed } = applyToSecret(
-          record.data,
-          group,
-          matcher,
-          opts.replacement,
-          opts.options
-        );
-        if (!changed) {
-          report.skipped++;
-          continue;
         }
 
         await this.service.write(opts.mount, group.secretPath, newData, record.version);
@@ -133,35 +158,25 @@ export class ReplaceEngine {
   }
 }
 
-/** Apply matcher-based replacement to a single secret's data. */
-export function applyToSecret(
-  data: SecretData,
-  group: SecretMatches,
+/**
+ * Splice replacements into a document at each match's range, working from the
+ * last match to the first so earlier offsets remain valid.
+ */
+export function applyMatchesToDocument(
+  document: string,
+  matches: Array<{ startOffset: number; endOffset: number }>,
   matcher: RegExp,
   replacement: string,
   options: SearchOptions
-): { data: SecretData; changed: boolean } {
-  const next: SecretData = { ...data };
-  let changed = false;
-
-  for (const match of group.matches) {
-    if (match.location === "value" && options.searchValues) {
-      const current = next[match.key];
-      if (typeof current === "string") {
-        const replaced = applyReplacement(matcher, current, replacement, options);
-        if (replaced !== current) {
-          next[match.key] = replaced;
-          changed = true;
-        }
-      }
-    } else if (match.location === "key" && options.searchKeys) {
-      const newKey = applyReplacement(matcher, match.key, replacement, options);
-      if (newKey !== match.key && !(newKey in next)) {
-        next[newKey] = next[match.key];
-        delete next[match.key];
-        changed = true;
-      }
+): string {
+  const ordered = [...matches].sort((a, b) => b.startOffset - a.startOffset);
+  let text = document;
+  for (const m of ordered) {
+    const matched = text.slice(m.startOffset, m.endOffset);
+    const replaced = applyReplacement(matcher, matched, replacement, options);
+    if (replaced !== matched) {
+      text = text.slice(0, m.startOffset) + replaced + text.slice(m.endOffset);
     }
   }
-  return { data: next, changed };
+  return text;
 }

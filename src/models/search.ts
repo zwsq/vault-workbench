@@ -22,18 +22,32 @@ export interface SearchRequest {
   scope: SearchScope;
 }
 
-/** A single match inside one key/value pair of a secret. */
+/**
+ * A single match located within the secret's pretty-printed JSON document.
+ *
+ * Positions refer to the exact text produced by rendering the secret for the
+ * editor (`JSON.stringify(data, null, 2) + "\n"`), so they map 1:1 to editor
+ * line/character coordinates for reveal + selection.
+ */
 export interface SearchMatch {
-  /** Path of the secret relative to the mount. */
-  secretPath: string;
-  /** The key within the secret where the match was found. */
-  key: string;
-  /** Whether the match occurred in the key name or the value. */
+  /** Whether the match falls on a JSON key token or a value. */
   location: "key" | "value";
-  /** The full original string that was searched (key name or stringified value). */
-  original: string;
-  /** Character ranges [start, end) within `original` that matched. */
-  ranges: Array<[number, number]>;
+  /** Absolute character offsets [start, end) within the document text. */
+  startOffset: number;
+  endOffset: number;
+  /** Zero-based start position. */
+  startLine: number;
+  startChar: number;
+  /** Zero-based end position (exclusive). */
+  endLine: number;
+  endChar: number;
+  /** Text of the start line (without trailing newline) for previewing. */
+  lineText: string;
+  /** Highlight range within `lineText` (end clamped to line length for multi-line). */
+  lineMatchStart: number;
+  lineMatchEnd: number;
+  /** The exact matched substring (may span multiple lines). */
+  matchText: string;
 }
 
 /** Matches grouped by secret path. */
@@ -42,10 +56,10 @@ export interface SecretMatches {
   matches: SearchMatch[];
 }
 
-/** A preview of a single planned replacement in one key. */
+/** A preview of a single planned replacement. */
 export interface ReplacePreview {
   secretPath: string;
-  key: string;
+  startLine: number;
   location: "key" | "value";
   before: string;
   after: string;

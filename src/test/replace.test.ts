@@ -1,9 +1,9 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { applyToSecret } from "../replace/replaceEngine";
+import { applyMatchesToDocument } from "../replace/replaceEngine";
 import { buildMatcher } from "../search/matcher";
-import { SearchOptions, SecretMatches } from "../models/search";
-import { scanSecret } from "../search/searchEngine";
+import { renderSecretDocument, scanDocument } from "../search/document";
+import { SearchOptions } from "../models/search";
 
 const opts: SearchOptions = {
   regex: false,
@@ -13,37 +13,36 @@ const opts: SearchOptions = {
   searchValues: true,
 };
 
-test("replaces value matches only for string values", () => {
+function replace(data: Record<string, unknown>, query: string, replacement: string, o: SearchOptions) {
+  const doc = renderSecretDocument(data);
+  const matcher = buildMatcher(query, o);
+  const matches = scanDocument(doc, matcher, o);
+  const next = applyMatchesToDocument(doc, matches, matcher, replacement, o);
+  return { next, changed: next !== doc, parsed: JSON.parse(next) };
+}
+
+test("replaces value matches, leaves non-string values intact", () => {
   const data = { ConnectionString: "Server=old-db.company.local", port: 5432 };
-  const matches = scanSecret("apps/api/config", data, buildMatcher("old-db", opts), opts);
-  const group: SecretMatches = { secretPath: "apps/api/config", matches };
-  const { data: out, changed } = applyToSecret(data, group, buildMatcher("old-db", opts), "new-db", opts);
+  const { parsed, changed } = replace(data, "old-db", "new-db", opts);
   assert.equal(changed, true);
-  assert.equal(out.ConnectionString, "Server=new-db.company.local");
-  assert.equal(out.port, 5432);
+  assert.equal(parsed.ConnectionString, "Server=new-db.company.local");
+  assert.equal(parsed.port, 5432);
 });
 
-test("renames key when matching on keys", () => {
-  const data = { OLD_HOST: "x" };
-  const matches = scanSecret("p", data, buildMatcher("OLD", opts), opts);
-  const group: SecretMatches = { secretPath: "p", matches };
-  const { data: out, changed } = applyToSecret(data, group, buildMatcher("OLD", opts), "NEW", opts);
-  assert.equal(changed, true);
-  assert.equal(out.NEW_HOST, "x");
-  assert.equal("OLD_HOST" in out, false);
+test("renames a key when matching keys", () => {
+  const { parsed } = replace({ OLD_HOST: "x" }, "OLD", "NEW", opts);
+  assert.equal(parsed.NEW_HOST, "x");
+  assert.equal("OLD_HOST" in parsed, false);
 });
 
-test("no change returns changed=false", () => {
-  const data = { a: "b" };
-  const matches = scanSecret("p", data, buildMatcher("zzz", opts), opts);
-  const group: SecretMatches = { secretPath: "p", matches };
-  const { changed } = applyToSecret(data, group, buildMatcher("zzz", opts), "y", opts);
+test("searchValues only does not touch keys", () => {
+  const valuesOnly = { ...opts, searchKeys: false };
+  const { parsed } = replace({ host: "host-value" }, "host", "X", valuesOnly);
+  assert.equal("host" in parsed, true); // key preserved
+  assert.equal(parsed.host, "X-value");
+});
+
+test("no match yields no change", () => {
+  const { changed } = replace({ a: "b" }, "zzz", "y", opts);
   assert.equal(changed, false);
-});
-
-test("scanSecret finds key and value matches", () => {
-  const data = { host: "old-db", note: "nothing" };
-  const matches = scanSecret("p", data, buildMatcher("old", { ...opts }), { ...opts });
-  assert.equal(matches.length, 1);
-  assert.equal(matches[0].location, "value");
 });
