@@ -11,7 +11,8 @@ or AI feature of any kind.
 ## Features
 
 - **Multiple connections** — connect to one or more Vault instances (token auth),
-  each with its own URL, namespace, default mount, and TLS setting. Switch freely.
+  each with its own URL, namespace, default mount, optional path prefix, KV
+  version, and TLS setting. Switch freely.
 - **Secure, sync-free storage** — tokens are stored in VS Code SecretStorage;
   connection metadata is stored in local-only `globalState` and explicitly opted
   out of Settings Sync. Nothing sensitive ever reaches synced settings.
@@ -28,13 +29,45 @@ or AI feature of any kind.
 - **Search panel** — search keys and/or values with Match Case, Whole Word, and
   Regex options, scoped to a connection, mount, and starting path. Results stream
   in with match highlighting.
-- **Replace with preview** — see an old/new diff for every planned change before
-  anything is written. Nothing is written until you confirm.
+- **Replace with preview** — inline before/after diffs appear as you type in the
+  Replace box, and opening a result shows a full diff editor (current vs
+  proposed). Nothing is written until you confirm.
+- **Delete matched text** — leave the Replace box empty to remove matches; this
+  path requires a two-step confirmation to prevent accidents.
+- **Selective replace** — tick/untick secrets in the results; the action button
+  reads *Replace All (N)* or *Replace Selected (k)* accordingly.
 - **Batch replace** — progress notification, per-item continue-on-failure, and a
   final report of succeeded / skipped / failed counts.
 - **Backups** — optionally snapshot each secret (full JSON, path, version,
   timestamp) before modifying it, and restore later.
 - **Exports** — export search results to JSON or CSV.
+
+## Creating a connection
+
+Open the **Vault** view in the Activity Bar and run **Add Connection** (the `+`
+button or `Vault: Add Connection`). The wizard prompts, in order, for:
+
+1. **Display name** — a friendly label shown in the tree.
+2. **URL** — e.g. `https://vault.company.local:8200` (http or https).
+3. **Namespace** *(optional)* — Vault Enterprise namespace, or blank.
+4. **Default KV mount** — e.g. `secret`.
+5. **Path prefix** *(optional)* — a sub-path to browse from, e.g. `apps/api`.
+   Use this when your token is scoped to part of a mount and cannot list the
+   mount root.
+6. **KV version** — `Auto-detect`, `KV Version 2`, or `KV Version 1`. Choosing an
+   explicit version is recommended for tokens that lack access to Vault's
+   `sys/*` endpoints, since it skips version probing entirely.
+7. **TLS** — verify the certificate (recommended) or *Skip TLS verification* for
+   self-signed certificates / internal PKI.
+
+You are then prompted for the **token**, which is stored in VS Code
+SecretStorage (never in settings, never synced). Use `Vault: Set Token` on a
+connection to update it later.
+
+> Scoped tokens: browsing and searching require `list` on the KV `metadata`
+> path and `read` on the `data` path for whatever prefix you use (for KV v2,
+> e.g. `secret/metadata/apps/api/*` and `secret/data/apps/api/*`). The extension
+> tolerates missing `sys/*` access and falls back to your default mount.
 
 ## Architecture
 

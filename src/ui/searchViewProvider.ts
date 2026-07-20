@@ -194,14 +194,43 @@ export class SearchViewProvider implements vscode.WebviewViewProvider {
 
     // Nothing is written before this explicit confirmation.
     const count = msg.includedPaths.length;
-    const backupNote = cfg.backupBeforeReplace ? " A backup of each secret will be saved first." : "";
-    const confirm = await vscode.window.showWarningMessage(
-      `Replace matches in ${count} secret(s)?${backupNote}`,
-      { modal: true, detail: "This writes changes back to Vault. Review the inline diffs before confirming." },
-      "Replace All"
-    );
-    if (confirm !== "Replace All") {
+    if (count === 0) {
+      this.post({ type: "error", message: "Select at least one secret to replace." });
       return;
+    }
+    const backupNote = cfg.backupBeforeReplace ? " A backup of each secret is saved first." : "";
+    const isDeletion = msg.replacement.length === 0;
+
+    if (isDeletion) {
+      // Deleting matched text is destructive; require a two-step confirmation.
+      const first = await vscode.window.showWarningMessage(
+        `Delete the matched text in ${count} secret(s)?`,
+        {
+          modal: true,
+          detail: "The replacement is empty, so every match will be removed (replace-with-nothing).",
+        },
+        "Continue"
+      );
+      if (first !== "Continue") {
+        return;
+      }
+      const second = await vscode.window.showWarningMessage(
+        `Confirm: permanently modify ${count} secret(s) in Vault?`,
+        { modal: true, detail: `This cannot be undone.${backupNote}` },
+        "Delete Matched Text"
+      );
+      if (second !== "Delete Matched Text") {
+        return;
+      }
+    } else {
+      const confirm = await vscode.window.showWarningMessage(
+        `Replace matches in ${count} secret(s)?`,
+        { modal: true, detail: `This writes changes back to Vault. Review the inline diffs before confirming.${backupNote}` },
+        "Replace"
+      );
+      if (confirm !== "Replace") {
+        return;
+      }
     }
 
     const connectionId = this.currentRequest.scope.connectionId;

@@ -63,7 +63,18 @@
     }
   });
   // Live inline diff as the user edits the replace field (no re-search needed).
+  // Focusing the replace box (even empty) previews deletions; typing previews
+  // the replacement.
+  let replaceFocused = false;
   el.replacement.addEventListener("input", rerenderAllMatches);
+  el.replacement.addEventListener("focus", () => {
+    replaceFocused = true;
+    rerenderAllMatches();
+  });
+  el.replacement.addEventListener("blur", () => {
+    replaceFocused = false;
+    rerenderAllMatches();
+  });
   autoGrow(el.query);
   autoGrow(el.replacement);
   el.query.addEventListener("input", () => autoGrow(el.query));
@@ -80,6 +91,7 @@
   function doSearch() {
     groups.clear();
     el.results.innerHTML = "";
+    updateReplaceButton();
     lastQuery = el.query.value;
     lastOptions = currentOptions();
     vscode.postMessage({
@@ -154,8 +166,11 @@
     const after = escapeHtml(line.slice(match.lineMatchEnd));
     const replacement = el.replacement.value;
     const isMulti = match.startLine !== match.endLine;
+    // "Replace mode" is active while the replace box is focused or non-empty,
+    // so deletions (empty replacement) are previewed too.
+    const replacing = replaceFocused || replacement.length > 0;
 
-    if (!replacement) {
+    if (!replacing) {
       const shown = escapeHtml(matched) + (isMulti ? "<span class='ellipsis'> …</span>" : "");
       return before + "<mark>" + shown + "</mark>" + after;
     }
@@ -166,8 +181,9 @@
     }
     const newFull = applyReplacement(re, match.matchText, replacement, lastOptions);
     const oldShown = escapeHtml(matched) + (isMulti ? " …" : "");
-    const newShown = escapeHtml(isMulti ? newFull.split("\n")[0] + " …" : newFull);
-    return before + "<del>" + oldShown + "</del><ins>" + newShown + "</ins>" + after;
+    const del = "<del>" + oldShown + "</del>";
+    const ins = newFull.length > 0 ? "<ins>" + escapeHtml(isMulti ? newFull.split("\n")[0] + " …" : newFull) + "</ins>" : "";
+    return before + del + ins + after;
   }
 
   function makeMatchRow(result, match) {
@@ -203,8 +219,9 @@
     const checkbox = document.createElement("input");
     checkbox.type = "checkbox";
     checkbox.checked = true;
-    checkbox.title = "Include in Replace All";
+    checkbox.title = "Include in replace";
     checkbox.addEventListener("click", (e) => e.stopPropagation());
+    checkbox.addEventListener("change", updateReplaceButton);
     header.appendChild(checkbox);
 
     const pathSpan = document.createElement("span");
@@ -228,6 +245,26 @@
     header.addEventListener("click", () => body.classList.toggle("hidden"));
     el.results.appendChild(group);
     groups.set(result.secretPath, { result, groupEl: group, checkbox });
+    updateReplaceButton();
+  }
+
+  /** Reflect selection in the replace button: "Replace All (N)" vs "Replace Selected (k)". */
+  function updateReplaceButton() {
+    const total = groups.size;
+    let selected = 0;
+    for (const g of groups.values()) if (g.checkbox.checked) selected++;
+    if (total === 0) {
+      el.replaceBtn.textContent = "Replace All";
+      el.replaceBtn.disabled = false;
+      return;
+    }
+    if (selected === total) {
+      el.replaceBtn.textContent = "Replace All (" + total + ")";
+    } else if (selected === 0) {
+      el.replaceBtn.textContent = "Replace (none selected)";
+    } else {
+      el.replaceBtn.textContent = "Replace Selected (" + selected + ")";
+    }
   }
 
   /** Re-render match rows (e.g. after the replace field changes) without re-searching. */
