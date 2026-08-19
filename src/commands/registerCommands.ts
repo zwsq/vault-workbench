@@ -231,6 +231,115 @@ export function registerCommands(deps: CommandDeps): void {
     vscode.window.showInformationMessage(`Deleted ${deleted} secret(s) from "${displayPath}".`);
   });
 
+  reg("vault.renamePath", async (node?: VaultNode) => {
+    if (!node || !node.mount || !node.path || (node.kind !== "secret" && node.kind !== "folder")) {
+      return;
+    }
+    if (getConfig().readOnly) {
+      vscode.window.showWarningMessage("Vault: read-only mode is enabled.");
+      return;
+    }
+
+    const service = await deps.factory.create(node.connectionId);
+    const isFolder = node.kind === "folder";
+    const parentPath = node.path.includes("/")
+      ? node.path.slice(0, node.path.lastIndexOf("/"))
+      : "";
+
+    const newName = await vscode.window.showInputBox({
+      title: isFolder ? "Rename Folder" : "Rename Secret",
+      prompt: `Enter the new name for "${node.label}"`,
+      value: node.label,
+      validateInput: (v) => {
+        const trimmed = v.trim();
+        if (!trimmed) { return "Name is required."; }
+        if (trimmed.includes("/")) { return "Name must not contain '/'."; }
+        if (trimmed === node!.label) { return "Name is unchanged."; }
+        return undefined;
+      },
+    });
+    if (!newName) {
+      return;
+    }
+
+    const newPath = parentPath ? joinPath(parentPath, newName.trim()) : newName.trim();
+
+    // Check that the target doesn't already exist
+    if (isFolder) {
+      const siblings = await service.list(node.mount, parentPath);
+      if (siblings.some((e) => e.isFolder && e.name === newName.trim())) {
+        vscode.window.showErrorMessage(`A folder named "${newName.trim()}" already exists in this path.`);
+        return;
+      }
+    } else {
+      const existing = await service.read(node.mount, newPath);
+      if (existing) {
+        vscode.window.showErrorMessage(`A secret named "${newName.trim()}" already exists in this path.`);
+        return;
+      }
+    }
+
+    if (isFolder) {
+      const confirm = await vscode.window.showWarningMessage(
+        `Renaming a folder will copy all secrets to the new path and delete the originals. Version history for all secrets will be lost. Continue?`,
+        { modal: true },
+        "Rename"
+      );
+      if (confirm !== "Rename") {
+        return;
+      }
+    }
+
+    let moved = 0;
+
+    async function moveRecursive(mount: string, oldBase: string, newBase: string): Promise<void> {
+      const entries = await service.list(mount, oldBase);
+      for (const entry of entries) {
+        if (entry.isFolder) {
+          const oldSub = entry.path;
+          const newSub = newBase + oldSub.slice(oldBase.length);
+          await moveRecursive(mount, oldSub, newSub);
+        } else {
+          const record = await service.read(mount, entry.path);
+          if (record) {
+            const targetPath = newBase + entry.path.slice(oldBase.length);
+            await service.write(mount, targetPath, record.data);
+            await service.delete(mount, entry.path);
+            moved++;
+          }
+        }
+      }
+    }
+
+    await vscode.window.withProgress(
+      {
+        location: vscode.ProgressLocation.Notification,
+        title: `Renaming "${node.label}" to "${newName.trim()}"…`,
+        cancellable: false,
+      },
+      async () => {
+        if (isFolder) {
+          await moveRecursive(node.mount!, node.path!, newPath);
+        } else {
+          const record = await service.read(node.mount!, node.path!);
+          if (record) {
+            await service.write(node.mount!, newPath, record.data);
+            await service.delete(node.mount!, node.path!);
+            moved = 1;
+          }
+        }
+      }
+    );
+
+    treeProvider.refresh();
+    logger.info(`Renamed ${node.path} → ${newPath} (${moved} secret(s) moved).`);
+    vscode.window.showInformationMessage(
+      isFolder
+        ? `Renamed folder: ${moved} secret(s) moved to "${newPath}".`
+        : `Renamed secret to "${newPath}".`
+    );
+  });
+
   reg("vault.copyPath", async (node?: VaultNode) => {
     if (!node?.path) {
       return;

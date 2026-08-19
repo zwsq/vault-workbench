@@ -126,6 +126,11 @@
         "icon": "$(trash)"
       },
       {
+        "command": "vault.renamePath",
+        "title": "Rename",
+        "icon": "$(edit)"
+      },
+      {
         "command": "vault.copyPath",
         "title": "Vault: Copy Path"
       },
@@ -204,9 +209,14 @@
           "group": "4_edit@2"
         },
         {
-          "command": "vault.deletePath",
+          "command": "vault.renamePath",
           "when": "view == vaultExplorer && viewItem =~ /^vault(Folder|Secret)$/",
           "group": "4_edit@3"
+        },
+        {
+          "command": "vault.deletePath",
+          "when": "view == vaultExplorer && viewItem =~ /^vault(Folder|Secret)$/",
+          "group": "4_edit@4"
         },
         {
           "command": "vault.copyPath",
@@ -226,6 +236,10 @@
         },
         {
           "command": "vault.deletePath",
+          "when": "false"
+        },
+        {
+          "command": "vault.renamePath",
           "when": "false"
         },
         {
