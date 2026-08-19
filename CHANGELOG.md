@@ -6,6 +6,32 @@ this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.2.0] - 2026-08-19
+
+### Added
+
+- **Download as ZIP** — right-click a mount or folder to download all secrets
+  as a `.zip` archive.
+- **Recursive delete** — right-click a folder or secret to delete it (folders
+  delete all nested secrets recursively). Two-step confirmation with path
+  re-typing for folders.
+- **Rename** — rename secrets and folders from the context menu. Folders are
+  moved recursively with a warning that version history will be lost.
+  Duplicate-name check prevents accidental overwrites.
+- **Refresh in context menu** — right-click a connection, mount, or folder to
+  refresh just that subtree.
+- Auto-refresh of the Vault Explorer after creating, deleting, or renaming
+  secrets.
+
+### Fixed
+
+- **New secret save bug** — creating a new secret no longer opens the OS
+  "Save As" dialog; Ctrl+S now saves directly to Vault via the `vault:`
+  filesystem provider.
+- **Duplicate save prevention** — pressing Ctrl+S multiple times without
+  changing the document no longer writes redundant versions to Vault.
+
+
 ## [0.1.0] - 2026-07-20
 
 ### Added
