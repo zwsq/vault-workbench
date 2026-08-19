@@ -162,6 +162,75 @@ export function registerCommands(deps: CommandDeps): void {
     logger.info(`Deleted secret ${node.mount}/${node.path}.`);
   });
 
+  reg("vault.deletePath", async (node?: VaultNode) => {
+    if (!node || !node.mount || (node.kind !== "secret" && node.kind !== "folder")) {
+      return;
+    }
+    if (getConfig().readOnly) {
+      vscode.window.showWarningMessage("Vault: read-only mode is enabled.");
+      return;
+    }
+
+    const displayPath = `${node.mount}/${node.path ?? ""}`;
+    const isFolder = node.kind === "folder";
+    const label = isFolder ? "folder and all secrets under it" : "secret";
+
+    const first = await vscode.window.showWarningMessage(
+      `Are you sure you want to delete the ${label} "${displayPath}"?${isFolder ? " This will recursively delete ALL secrets in this path." : ""}`,
+      { modal: true },
+      "Delete"
+    );
+    if (first !== "Delete") {
+      return;
+    }
+
+    if (isFolder) {
+      const typed = await vscode.window.showInputBox({
+        title: "Confirm Recursive Delete",
+        prompt: `Type "${node.path}" to confirm permanent deletion of all secrets under this path`,
+        validateInput: (v) => v === node.path ? undefined : "Input does not match the path.",
+      });
+      if (typed === undefined) {
+        return;
+      }
+    }
+
+    const service = await deps.factory.create(node.connectionId);
+    let deleted = 0;
+
+    async function deleteRecursive(mount: string, path: string): Promise<void> {
+      const entries = await service.list(mount, path);
+      for (const entry of entries) {
+        if (entry.isFolder) {
+          await deleteRecursive(mount, entry.path);
+        } else {
+          await service.delete(mount, entry.path);
+          deleted++;
+        }
+      }
+    }
+
+    await vscode.window.withProgress(
+      {
+        location: vscode.ProgressLocation.Notification,
+        title: `Deleting ${displayPath}…`,
+        cancellable: false,
+      },
+      async () => {
+        if (isFolder) {
+          await deleteRecursive(node.mount!, node.path ?? "");
+        } else {
+          await service.delete(node.mount!, node.path!);
+          deleted = 1;
+        }
+      }
+    );
+
+    treeProvider.refresh();
+    logger.info(`Deleted ${deleted} secret(s) under ${displayPath}.`);
+    vscode.window.showInformationMessage(`Deleted ${deleted} secret(s) from "${displayPath}".`);
+  });
+
   reg("vault.copyPath", async (node?: VaultNode) => {
     if (!node?.path) {
       return;

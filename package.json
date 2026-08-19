@@ -121,6 +121,11 @@
         "icon": "$(trash)"
       },
       {
+        "command": "vault.deletePath",
+        "title": "Delete",
+        "icon": "$(trash)"
+      },
+      {
         "command": "vault.copyPath",
         "title": "Vault: Copy Path"
       },
@@ -199,6 +204,11 @@
           "group": "4_edit@2"
         },
         {
+          "command": "vault.deletePath",
+          "when": "view == vaultExplorer && viewItem =~ /^vault(Folder|Secret)$/",
+          "group": "4_edit@3"
+        },
+        {
           "command": "vault.copyPath",
           "when": "view == vaultExplorer && viewItem =~ /^vault(Folder|Secret)$/",
           "group": "5_copy@1"
@@ -212,6 +222,10 @@
       "commandPalette": [
         {
           "command": "vault.openSecret",
+          "when": "false"
+        },
+        {
+          "command": "vault.deletePath",
           "when": "false"
         },
         {
