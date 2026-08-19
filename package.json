@@ -41,6 +41,9 @@
     "theme": "dark"
   },
   "main": "./dist/extension.js",
+  "dependencies": {
+    "adm-zip": "^0.5.16"
+  },
   "activationEvents": [],
   "capabilities": {
     "untrustedWorkspaces": {
@@ -122,6 +125,10 @@
         "title": "Vault: Copy Path"
       },
       {
+        "command": "vault.downloadPath",
+        "title": "Vault: Download Path"
+      },
+      {
         "command": "vault.searchHere",
         "title": "Vault: Search In This Path",
         "icon": "$(search)"
@@ -195,6 +202,11 @@
           "command": "vault.copyPath",
           "when": "view == vaultExplorer && viewItem =~ /^vault(Folder|Secret)$/",
           "group": "5_copy@1"
+        },
+        {
+          "command": "vault.downloadPath",
+          "when": "view == vaultExplorer && viewItem =~ /^vault(Mount|Folder)$/",
+          "group": "5_copy@2"
         }
       ],
       "commandPalette": [

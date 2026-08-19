@@ -1,4 +1,5 @@
 import * as vscode from "vscode";
+import AdmZip = require("adm-zip");
 import { ConnectionStore } from "../storage/connectionStore";
 import { BackupStore } from "../storage/backupStore";
 import { VaultServiceFactory, getConfig } from "../vault/vaultServiceFactory";
@@ -178,6 +179,53 @@ export function registerCommands(deps: CommandDeps): void {
 
   reg("vault.exportResultsJson", () => searchView.exportResults("json"));
   reg("vault.exportResultsCsv", () => searchView.exportResults("csv"));
+
+  reg("vault.downloadPath", async (node?: VaultNode) => {
+    if (!node || !node.mount) {
+      return;
+    }
+
+    const service = await deps.factory.create(node.connectionId);
+    const zip = new AdmZip();
+
+    async function collect(mount: string, path: string) {
+      const entries = await service.list(mount, path);
+      for (const entry of entries) {
+        if (entry.isFolder) {
+          await collect(mount, entry.path);
+        } else {
+          const secret = await service.read(mount, entry.path);
+          if (secret) {
+            zip.addFile(
+              `${entry.path}.json`,
+              Buffer.from(JSON.stringify(secret.data, null, 2))
+            );
+          }
+        }
+      }
+    }
+
+    await vscode.window.withProgress(
+      {
+        location: vscode.ProgressLocation.Notification,
+        title: "Vault: Downloading...",
+        cancellable: true,
+      },
+      async (_progress, _token) => {
+        await collect(node.mount!, node.path ?? "");
+      }
+    );
+
+    const saveUri = await vscode.window.showSaveDialog({
+      saveLabel: "Save Archive",
+      filters: { "Zip Files": ["zip"] },
+    });
+
+    if (saveUri) {
+      zip.writeZip(saveUri.fsPath);
+      vscode.window.showInformationMessage(`Vault: Saved to ${saveUri.fsPath}`);
+    }
+  });
 
   reg("vault.showLog", () => logger.show());
 
