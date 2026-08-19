@@ -89,7 +89,7 @@ export function registerCommands(deps: CommandDeps): void {
     vscode.window.showInformationMessage(`Vault: token saved for "${conn.name}".`);
   });
 
-  reg("vault.refresh", () => treeProvider.refresh());
+  reg("vault.refresh", (node?: VaultNode) => treeProvider.refresh(node));
 
   reg("vault.openSecret", async (node?: VaultNode) => {
     if (!node || node.kind !== "secret" || !node.mount || node.path === undefined) {
@@ -134,6 +134,7 @@ export function registerCommands(deps: CommandDeps): void {
     await vscode.languages.setTextDocumentLanguage(doc, "json");
     await vscode.window.showTextDocument(doc);
     if (isNew) {
+      treeProvider.refresh();
       vscode.window.showInformationMessage(
         `Edit the JSON and save to create ${node.mount}/${fullPath}.`
       );

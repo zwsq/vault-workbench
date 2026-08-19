@@ -194,6 +194,11 @@
           "group": "2_manage@2"
         },
         {
+          "command": "vault.refresh",
+          "when": "view == vaultExplorer && viewItem =~ /^vault(Connection|Mount|Folder)$/",
+          "group": "3_search@0"
+        },
+        {
           "command": "vault.searchHere",
           "when": "view == vaultExplorer && viewItem =~ /^vault(Connection|Mount|Folder)$/",
           "group": "3_search@1"
