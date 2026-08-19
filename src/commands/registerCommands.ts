@@ -120,18 +120,24 @@ export function registerCommands(deps: CommandDeps): void {
     }
     const fullPath = joinPath(base, rel);
     const uri = VaultFileSystemProvider.buildUri(node.connectionId, node.mount, fullPath);
-    const doc = await vscode.workspace.openTextDocument(uri).then(
-      (d) => d,
-      async () => {
-        // File does not exist yet; open an untitled-like editing session by writing later.
-        return vscode.workspace.openTextDocument({ language: "json", content: "{\n  \n}\n" });
-      }
-    );
+    let isNew = false;
+    try {
+      await deps.fsProvider.readFile(uri);
+    } catch {
+      // Secret doesn't exist yet — write a placeholder directly via the provider
+      // (bypasses vscode.workspace.fs which tries to mkdir parents and fails).
+      const placeholder = Buffer.from('{\n  "key": "value"\n}\n', "utf8");
+      await deps.fsProvider.writeFile(uri, placeholder, { create: true, overwrite: true });
+      isNew = true;
+    }
+    const doc = await vscode.workspace.openTextDocument(uri);
     await vscode.languages.setTextDocumentLanguage(doc, "json");
     await vscode.window.showTextDocument(doc);
-    vscode.window.showInformationMessage(
-      `Vault: edit the JSON and save to create ${node.mount}/${fullPath}. (Use "Save As" to the vault path if needed.)`
-    );
+    if (isNew) {
+      vscode.window.showInformationMessage(
+        `Edit the JSON and save to create ${node.mount}/${fullPath}.`
+      );
+    }
   });
 
   reg("vault.deleteSecret", async (node?: VaultNode) => {
