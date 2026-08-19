@@ -29,6 +29,8 @@ export class VaultFileSystemProvider implements vscode.FileSystemProvider {
   /** Tracks the last-read KV v2 version per URI to enable CAS writes. */
   private readonly versions = new Map<string, number | undefined>();
   private readonly sizes = new Map<string, number>();
+  /** Last-known data (canonical JSON) per URI to skip no-op saves. */
+  private readonly lastData = new Map<string, string>();
 
   constructor(private readonly factory: VaultServiceFactory, private readonly logger: Logger) {}
 
@@ -82,6 +84,7 @@ export class VaultFileSystemProvider implements vscode.FileSystemProvider {
     }
     this.versions.set(uri.toString(), record.version);
     const text = renderSecretDocument(record.data);
+    this.lastData.set(uri.toString(), JSON.stringify(record.data));
     const bytes = Buffer.from(text, "utf8");
     this.sizes.set(uri.toString(), bytes.length);
     return bytes;
@@ -101,6 +104,7 @@ export class VaultFileSystemProvider implements vscode.FileSystemProvider {
     }
 
     const text = Buffer.from(content).toString("utf8").trim() || "{}";
+    const key = uri.toString();
     let data: Record<string, unknown>;
     try {
       const parsed = JSON.parse(text);
@@ -114,12 +118,18 @@ export class VaultFileSystemProvider implements vscode.FileSystemProvider {
       throw vscode.FileSystemError.NoPermissions(message);
     }
 
+    const canonical = JSON.stringify(data);
+    if (this.lastData.get(key) === canonical) {
+      return;
+    }
+
     try {
       const service = await this.factory.create(connectionId);
-      const expected = this.versions.get(uri.toString());
+      const expected = this.versions.get(key);
       const record = await service.write(mount, path, data, expected);
-      this.versions.set(uri.toString(), record.version);
-      this.sizes.set(uri.toString(), content.length);
+      this.versions.set(key, record.version);
+      this.sizes.set(key, content.length);
+      this.lastData.set(key, canonical);
       this.logger.info(`Saved secret ${mount}/${path} (v${record.version ?? "1"}).`);
       this._onDidChangeFile.fire([{ type: vscode.FileChangeType.Changed, uri }]);
     } catch (err) {
@@ -137,8 +147,10 @@ export class VaultFileSystemProvider implements vscode.FileSystemProvider {
     const { connectionId, mount, path } = this.parse(uri);
     const service = await this.factory.create(connectionId);
     await service.delete(mount, path);
-    this.versions.delete(uri.toString());
-    this.sizes.delete(uri.toString());
+    const key = uri.toString();
+    this.versions.delete(key);
+    this.sizes.delete(key);
+    this.lastData.delete(key);
     this._onDidChangeFile.fire([{ type: vscode.FileChangeType.Deleted, uri }]);
   }
 
