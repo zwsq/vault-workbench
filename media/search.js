@@ -43,7 +43,7 @@
   }
 
   // --- option toggle buttons ---
-  document.querySelectorAll(".options button[data-opt]").forEach((btn) => {
+  document.querySelectorAll(".find-actions button[data-opt]").forEach((btn) => {
     btn.addEventListener("click", () => {
       const key = btn.getAttribute("data-opt");
       if (!key) return;
@@ -84,8 +84,16 @@
   );
 
   function autoGrow(area) {
+    const max = 200;
+    area.classList.remove("scrollable");
     area.style.height = "auto";
-    area.style.height = Math.min(area.scrollHeight, 200) + "px";
+    // Force layout with height 0 so scrollHeight reflects content, not the previous box.
+    area.style.height = "0px";
+    const next = Math.min(Math.max(area.scrollHeight, 26), max);
+    area.style.height = next + "px";
+    if (area.scrollHeight > max) {
+      area.classList.add("scrollable");
+    }
   }
 
   function doSearch() {
@@ -248,22 +256,29 @@
     updateReplaceButton();
   }
 
-  /** Reflect selection in the replace button: "Replace All (N)" vs "Replace Selected (k)". */
+  /** Reflect selection in the replace button title (icon stays; tooltip carries counts). */
   function updateReplaceButton() {
     const total = groups.size;
     let selected = 0;
     for (const g of groups.values()) if (g.checkbox.checked) selected++;
     if (total === 0) {
-      el.replaceBtn.textContent = "Replace All";
+      el.replaceBtn.title = "Replace All";
+      el.replaceBtn.setAttribute("aria-label", "Replace All");
       el.replaceBtn.disabled = false;
       return;
     }
     if (selected === total) {
-      el.replaceBtn.textContent = "Replace All (" + total + ")";
+      el.replaceBtn.title = "Replace All (" + total + ")";
+      el.replaceBtn.setAttribute("aria-label", "Replace All (" + total + ")");
+      el.replaceBtn.disabled = false;
     } else if (selected === 0) {
-      el.replaceBtn.textContent = "Replace (none selected)";
+      el.replaceBtn.title = "Replace (none selected)";
+      el.replaceBtn.setAttribute("aria-label", "Replace (none selected)");
+      el.replaceBtn.disabled = true;
     } else {
-      el.replaceBtn.textContent = "Replace Selected (" + selected + ")";
+      el.replaceBtn.title = "Replace Selected (" + selected + ")";
+      el.replaceBtn.setAttribute("aria-label", "Replace Selected (" + selected + ")");
+      el.replaceBtn.disabled = false;
     }
   }
 
@@ -278,6 +293,9 @@
       }
     }
   }
+
+  // Remember a mount requested by "prime" until the mounts list arrives.
+  let pendingMount = "";
 
   function fillSelect(select, items, selectedValue) {
     select.innerHTML = "";
@@ -295,7 +313,12 @@
     switch (msg.type) {
       case "connections": {
         const items = msg.connections.map((c) => ({ value: c.id, label: c.name }));
-        const preferred = msg.connections.find((c) => c.name === msg.defaultConnection) || msg.connections[0];
+        // Prefer: explicit preferredId (from prime) → current selection → settings default → first.
+        const preferred =
+          (msg.preferredId && msg.connections.find((c) => c.id === msg.preferredId)) ||
+          (el.connection.value && msg.connections.find((c) => c.id === el.connection.value)) ||
+          msg.connections.find((c) => c.name === msg.defaultConnection) ||
+          msg.connections[0];
         fillSelect(el.connection, items, preferred ? preferred.id : undefined);
         if (preferred) vscode.postMessage({ type: "selectConnection", id: preferred.id });
         break;
@@ -303,13 +326,26 @@
       case "mounts": {
         if (el.connection.value !== msg.connectionId) break;
         const items = msg.mounts.map((m) => ({ value: m, label: m }));
-        fillSelect(el.mount, items, msg.defaultMount || msg.mounts[0] || "");
+        const preferred =
+          (pendingMount && msg.mounts.includes(pendingMount) && pendingMount) ||
+          (el.mount.value && msg.mounts.includes(el.mount.value) && el.mount.value) ||
+          msg.defaultMount ||
+          msg.mounts[0] ||
+          "";
+        fillSelect(el.mount, items, preferred);
+        if (pendingMount) pendingMount = "";
         break;
       }
       case "prime": {
         if (msg.connectionId) el.connection.value = msg.connectionId;
-        if (msg.startPath) el.startPath.value = msg.startPath;
-        if (msg.mount) setTimeout(() => { if (msg.mount) el.mount.value = msg.mount; }, 100);
+        if (msg.startPath !== undefined) el.startPath.value = msg.startPath;
+        if (msg.mount) {
+          pendingMount = msg.mount;
+          if ([...el.mount.options].some((o) => o.value === msg.mount)) {
+            el.mount.value = msg.mount;
+            pendingMount = "";
+          }
+        }
         el.query.focus();
         break;
       }

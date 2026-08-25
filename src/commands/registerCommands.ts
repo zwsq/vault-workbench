@@ -348,6 +348,179 @@ export function registerCommands(deps: CommandDeps): void {
     await vscode.env.clipboard.writeText(node.mount ? `${node.mount}/${node.path}` : node.path);
   });
 
+  reg("vault.copyTo", async (node?: VaultNode) => {
+    if (!node || !node.mount || (node.kind !== "secret" && node.kind !== "folder" && node.kind !== "mount")) {
+      return;
+    }
+    if (getConfig().readOnly) {
+      vscode.window.showWarningMessage("Vault: read-only mode is enabled.");
+      return;
+    }
+
+    const connections = store.list();
+    if (connections.length === 0) {
+      vscode.window.showWarningMessage("No Vault connections configured.");
+      return;
+    }
+
+    const sourceConn = store.get(node.connectionId);
+    const sourceLabel = sourceConn?.name ?? node.connectionId;
+    const sourceBase = node.kind === "mount" ? "" : node.path ?? "";
+    const sourceDisplay = sourceBase
+      ? `${sourceLabel}/${node.mount}/${sourceBase}`
+      : `${sourceLabel}/${node.mount}`;
+
+    const destConnPick = await vscode.window.showQuickPick(
+      connections.map((c) => ({
+        label: c.name,
+        description: c.url.replace(/^https?:\/\//, ""),
+        id: c.id,
+      })),
+      {
+        title: "Copy To — Target Connection",
+        placeHolder: `Copying from ${sourceDisplay}`,
+      }
+    );
+    if (!destConnPick) {
+      return;
+    }
+
+    const destService = await deps.factory.create(destConnPick.id);
+    let mounts: string[] = [];
+    try {
+      mounts = await destService.listMounts();
+    } catch (err) {
+      vscode.window.showErrorMessage(`Vault: ${summarizeError(err)}`);
+      return;
+    }
+    const destConn = store.get(destConnPick.id);
+    if (mounts.length === 0 && destConn?.defaultMount) {
+      mounts = [destConn.defaultMount];
+    }
+    if (mounts.length === 0) {
+      vscode.window.showErrorMessage("Target connection has no KV mounts.");
+      return;
+    }
+
+    const destMountPick = await vscode.window.showQuickPick(
+      mounts.map((m) => ({ label: m })),
+      {
+        title: "Copy To — Target Mount",
+        placeHolder: "Select the destination KV mount",
+      }
+    );
+    if (!destMountPick) {
+      return;
+    }
+
+    const defaultDestPath =
+      node.kind === "secret"
+        ? sourceBase
+        : node.kind === "folder"
+          ? sourceBase
+          : "";
+    const destPathInput = await vscode.window.showInputBox({
+      title: "Copy To — Destination Path",
+      prompt:
+        node.kind === "secret"
+          ? "Full secret path under the target mount (existing secrets are skipped)"
+          : "Base path under the target mount (existing secrets are skipped; empty = mount root)",
+      value: defaultDestPath,
+      placeHolder: node.kind === "secret" ? "apps/my-secret" : "apps/backup (optional)",
+    });
+    if (destPathInput === undefined) {
+      return;
+    }
+    const destBase = destPathInput.trim().replace(/^\/+|\/+$/g, "");
+
+    const destDisplay = destBase
+      ? `${destConnPick.label}/${destMountPick.label}/${destBase}`
+      : `${destConnPick.label}/${destMountPick.label}`;
+    const confirm = await vscode.window.showWarningMessage(
+      `Copy ${sourceDisplay} → ${destDisplay}?\n\nExisting secrets at the destination will be skipped (not overwritten). Version history is not copied.`,
+      { modal: true },
+      "Copy"
+    );
+    if (confirm !== "Copy") {
+      return;
+    }
+
+    const sourceService = await deps.factory.create(node.connectionId);
+    let created = 0;
+    let skipped = 0;
+    let failed = 0;
+
+    function remap(entryPath: string): string {
+      if (node!.kind === "secret") {
+        return destBase;
+      }
+      const relative = sourceBase
+        ? entryPath.slice(sourceBase.length).replace(/^\//, "")
+        : entryPath;
+      return joinPath(destBase, relative);
+    }
+
+    async function copySecret(mount: string, path: string): Promise<void> {
+      const targetPath = remap(path);
+      if (!targetPath && node!.kind === "secret") {
+        failed++;
+        logger.error(`Copy skipped empty destination for ${mount}/${path}`);
+        return;
+      }
+      try {
+        const existing = await destService.read(destMountPick!.label, targetPath);
+        if (existing) {
+          skipped++;
+          return;
+        }
+        const record = await sourceService.read(mount, path);
+        if (!record) {
+          skipped++;
+          return;
+        }
+        await destService.write(destMountPick!.label, targetPath, record.data);
+        created++;
+      } catch (err) {
+        failed++;
+        logger.errorFrom(`Copy ${mount}/${path} → ${targetPath}`, err);
+      }
+    }
+
+    async function copyRecursive(mount: string, path: string): Promise<void> {
+      const entries = await sourceService.list(mount, path);
+      for (const entry of entries) {
+        if (entry.isFolder) {
+          await copyRecursive(mount, entry.path);
+        } else {
+          await copySecret(mount, entry.path);
+        }
+      }
+    }
+
+    await vscode.window.withProgress(
+      {
+        location: vscode.ProgressLocation.Notification,
+        title: `Copying to ${destDisplay}…`,
+        cancellable: false,
+      },
+      async () => {
+        if (node.kind === "secret") {
+          await copySecret(node.mount!, node.path!);
+        } else {
+          await copyRecursive(node.mount!, sourceBase);
+        }
+      }
+    );
+
+    treeProvider.refresh();
+    logger.info(
+      `Copy ${sourceDisplay} → ${destDisplay}: created=${created}, skipped=${skipped}, failed=${failed}`
+    );
+    vscode.window.showInformationMessage(
+      `Copy finished: ${created} created, ${skipped} skipped, ${failed} failed.`
+    );
+  });
+
   reg("vault.searchHere", async (node?: VaultNode) => {
     if (!node) {
       return;

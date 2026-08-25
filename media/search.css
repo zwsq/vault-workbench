@@ -1,5 +1,7 @@
 :root {
   --pad: 6px;
+  --control-height: 26px;
+  --find-action-size: 22px;
 }
 
 body {
@@ -10,7 +12,6 @@ body {
 }
 
 .scope,
-.query-row,
 .scope-opts {
   display: flex;
   gap: 6px;
@@ -19,10 +20,10 @@ body {
 }
 
 select,
-input[type="text"],
-textarea {
-  flex: 1;
+input[type="text"] {
+  width: 100%;
   min-width: 0;
+  height: var(--control-height);
   padding: 4px 6px;
   color: var(--vscode-input-foreground);
   background: var(--vscode-input-background);
@@ -31,63 +32,117 @@ textarea {
   outline: none;
   font-family: var(--vscode-font-family);
   font-size: var(--vscode-font-size);
-}
-
-textarea {
-  resize: vertical;
-  overflow-y: auto;
-  white-space: pre;
-  line-height: 1.4;
+  box-sizing: border-box;
 }
 
 input[type="text"]:focus,
-select:focus,
-textarea:focus {
+select:focus {
   border-color: var(--vscode-focusBorder);
 }
 
-.query-row {
-  align-items: flex-start;
-}
-
-.options {
+/* VS Code find-widget style: full-width input box with trailing icon actions */
+.find-input {
   display: flex;
+  align-items: flex-start;
   gap: 2px;
+  margin-bottom: 6px;
+  padding: 2px 2px 2px 6px;
+  background: var(--vscode-input-background);
+  border: 1px solid var(--vscode-input-border, transparent);
+  border-radius: 2px;
+  box-sizing: border-box;
 }
 
-button {
-  color: var(--vscode-button-secondaryForeground, var(--vscode-foreground));
-  background: var(--vscode-button-secondaryBackground, transparent);
-  border: 1px solid var(--vscode-contrastBorder, transparent);
-  border-radius: 2px;
-  padding: 3px 8px;
+.find-input:focus-within {
+  border-color: var(--vscode-focusBorder);
+}
+
+.find-input textarea {
+  flex: 1;
+  min-width: 0;
+  width: 100%;
+  margin: 0;
+  padding: 3px 4px 3px 0;
+  border: none;
+  outline: none;
+  resize: none;
+  overflow-x: hidden;
+  overflow-y: hidden;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+  line-height: 1.4;
+  min-height: var(--control-height);
+  max-height: 200px;
+  color: var(--vscode-input-foreground);
+  background: transparent;
+  font-family: var(--vscode-font-family);
+  font-size: var(--vscode-font-size);
+  box-sizing: border-box;
+}
+
+.find-input textarea.scrollable {
+  overflow-y: auto;
+}
+
+.find-actions {
+  display: flex;
+  flex: 0 0 auto;
+  gap: 1px;
+  align-items: center;
+  padding-top: 2px;
+}
+
+.icon-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: var(--find-action-size);
+  height: var(--find-action-size);
+  min-width: var(--find-action-size);
+  padding: 0;
+  margin: 0;
+  border: 1px solid transparent;
+  border-radius: 3px;
+  color: var(--vscode-icon-foreground, var(--vscode-foreground));
+  background: transparent;
   cursor: pointer;
   font-family: var(--vscode-font-family);
-}
-
-button:hover {
-  background: var(--vscode-button-secondaryHoverBackground, var(--vscode-toolbar-hoverBackground));
-}
-
-button.primary {
-  color: var(--vscode-button-foreground);
-  background: var(--vscode-button-background);
-}
-
-button.primary:hover {
-  background: var(--vscode-button-hoverBackground);
-}
-
-.options button {
-  min-width: 26px;
   font-size: 11px;
-  padding: 2px 4px;
+  line-height: 1;
+  opacity: 0.8;
+  box-sizing: border-box;
 }
 
-.options button.active {
+.icon-btn:hover {
+  opacity: 1;
+  background: var(--vscode-toolbar-hoverBackground, rgba(90, 93, 94, 0.31));
+}
+
+.icon-btn:active {
+  background: var(--vscode-toolbar-activeBackground, rgba(99, 102, 103, 0.31));
+}
+
+.icon-btn.active {
+  opacity: 1;
   background: var(--vscode-inputOption-activeBackground);
-  color: var(--vscode-inputOption-activeForeground);
-  border-color: var(--vscode-inputOption-activeBorder);
+  color: var(--vscode-inputOption-activeForeground, var(--vscode-foreground));
+  border-color: var(--vscode-inputOption-activeBorder, transparent);
+}
+
+.icon-btn.action {
+  opacity: 1;
+}
+
+.icon-btn:disabled {
+  opacity: 0.35;
+  cursor: default;
+  background: transparent;
+}
+
+.icon-btn svg {
+  display: block;
+  pointer-events: none;
 }
 
 .scope-opts label {
@@ -95,10 +150,6 @@ button.primary:hover {
   align-items: center;
   gap: 3px;
   font-size: 12px;
-}
-
-.spacer {
-  flex: 1;
 }
 
 .status {

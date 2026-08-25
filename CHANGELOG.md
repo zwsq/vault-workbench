@@ -6,6 +6,27 @@ this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.3.0] - 2026-08-25
+
+### Added
+
+- **Copy To…** — recursively copy a mount, folder, or secret to another
+  connection/mount/path. Existing destination secrets are skipped (never
+  overwritten); version history is not copied.
+
+### Fixed
+
+- **Search In This Path** now keeps the connection of the selected tree node
+  instead of resetting to the first / default Vault instance.
+- Search/replace textareas expand vertically with content; horizontal
+  scrolling is disabled (long lines wrap).
+
+### Changed
+
+- Search & Replace panel matches VS Code find-widget style: each field on its
+  own full-width row, auto-growing textareas, and trailing icon actions
+  (match options, search, replace).
+
 ## [0.2.0] - 2026-08-19
 
 ### Added
@@ -30,7 +51,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   filesystem provider.
 - **Duplicate save prevention** — pressing Ctrl+S multiple times without
   changing the document no longer writes redundant versions to Vault.
-
 
 ## [0.1.0] - 2026-07-20
 

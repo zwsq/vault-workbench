@@ -2,7 +2,7 @@
   "name": "vault-workbench",
   "displayName": "Vault Workbench",
   "description": "Vault Workbench: browse, search, edit, and batch search-and-replace HashiCorp Vault KV secrets. Fully local, no telemetry.",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "publisher": "zwsq",
   "license": "MIT",
   "icon": "media/icon.png",
@@ -132,11 +132,16 @@
       },
       {
         "command": "vault.copyPath",
-        "title": "Vault: Copy Path"
+        "title": "Copy Path"
+      },
+      {
+        "command": "vault.copyTo",
+        "title": "Copy To…",
+        "icon": "$(copy)"
       },
       {
         "command": "vault.downloadPath",
-        "title": "Vault: Download Path"
+        "title": "Download Path"
       },
       {
         "command": "vault.searchHere",
@@ -229,9 +234,14 @@
           "group": "5_copy@1"
         },
         {
+          "command": "vault.copyTo",
+          "when": "view == vaultExplorer && viewItem =~ /^vault(Mount|Folder|Secret)$/",
+          "group": "5_copy@2"
+        },
+        {
           "command": "vault.downloadPath",
           "when": "view == vaultExplorer && viewItem =~ /^vault(Mount|Folder)$/",
-          "group": "5_copy@2"
+          "group": "5_copy@3"
         }
       ],
       "commandPalette": [
@@ -249,6 +259,10 @@
         },
         {
           "command": "vault.copyPath",
+          "when": "false"
+        },
+        {
+          "command": "vault.copyTo",
           "when": "false"
         },
         {

@@ -78,11 +78,13 @@ export class SearchViewProvider implements vscode.WebviewViewProvider {
     } else {
       await vscode.commands.executeCommand("vaultSearch.focus");
     }
-    this.post({ type: "prime", connectionId, mount: mount ?? "", startPath: startPath ?? "" });
-    await this.sendConnections();
-    if (mount !== undefined) {
-      await this.sendMounts(connectionId);
+    // Refresh lists with the tree-selected connection preferred, then apply
+    // prime last so startPath/mount win over defaults.
+    await this.sendConnections(connectionId);
+    if (connectionId) {
+      await this.sendMounts(connectionId, mount);
     }
+    this.post({ type: "prime", connectionId, mount: mount ?? "", startPath: startPath ?? "" });
   }
 
   private post(message: unknown): void {
@@ -120,12 +122,17 @@ export class SearchViewProvider implements vscode.WebviewViewProvider {
     }
   }
 
-  private async sendConnections(): Promise<void> {
+  private async sendConnections(preferredId?: string): Promise<void> {
     const conns = this.store.list().map((c) => ({ id: c.id, name: c.name, defaultMount: c.defaultMount }));
-    this.post({ type: "connections", connections: conns, defaultConnection: getConfig().defaultConnection });
+    this.post({
+      type: "connections",
+      connections: conns,
+      defaultConnection: getConfig().defaultConnection,
+      preferredId: preferredId ?? "",
+    });
   }
 
-  private async sendMounts(connectionId: string): Promise<void> {
+  private async sendMounts(connectionId: string, preferredMount?: string): Promise<void> {
     if (!connectionId) {
       return;
     }
@@ -136,7 +143,12 @@ export class SearchViewProvider implements vscode.WebviewViewProvider {
       if (mounts.length === 0 && conn?.defaultMount) {
         mounts = [conn.defaultMount];
       }
-      this.post({ type: "mounts", connectionId, mounts, defaultMount: conn?.defaultMount ?? "" });
+      this.post({
+        type: "mounts",
+        connectionId,
+        mounts,
+        defaultMount: preferredMount || conn?.defaultMount || "",
+      });
     } catch (err) {
       this.post({ type: "error", message: summarizeError(err) });
     }
@@ -383,32 +395,41 @@ export class SearchViewProvider implements vscode.WebviewViewProvider {
 <body>
   <div class="scope">
     <select id="connection" title="Connection"></select>
+  </div>
+  <div class="scope">
     <select id="mount" title="Mount"></select>
+  </div>
+  <div class="scope">
     <input id="startPath" type="text" placeholder="Starting path (optional)" />
   </div>
 
-  <div class="query-row">
-    <textarea id="query" rows="1" placeholder="Search (paste multi-line blocks; Ctrl+Enter to search)"></textarea>
-    <div class="options">
-      <button data-opt="matchCase" title="Match Case">Aa</button>
-      <button data-opt="wholeWord" title="Whole Word">ab|</button>
-      <button data-opt="regex" title="Use Regular Expression">.*</button>
+  <div class="find-input">
+    <textarea id="query" rows="1" placeholder="Search"></textarea>
+    <div class="find-actions">
+      <button type="button" data-opt="matchCase" class="icon-btn" title="Match Case (Aa)" aria-label="Match Case">Aa</button>
+      <button type="button" data-opt="wholeWord" class="icon-btn" title="Match Whole Word" aria-label="Match Whole Word">ab|</button>
+      <button type="button" data-opt="regex" class="icon-btn" title="Use Regular Expression" aria-label="Use Regular Expression">.*</button>
+      <button type="button" id="searchBtn" class="icon-btn action" title="Search (Ctrl+Enter)" aria-label="Search">
+        <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true"><path d="M11.5 7a4.5 4.5 0 1 1-9 0 4.5 4.5 0 0 1 9 0zm-.82 4.74a6 6 0 1 1 1.06-1.06l2.79 2.79a.75.75 0 1 1-1.06 1.06l-2.79-2.79z"/></svg>
+      </button>
+      <button type="button" id="cancelBtn" class="icon-btn action" title="Cancel" aria-label="Cancel" hidden>
+        <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true"><path d="M8 8.707l3.646 3.647.708-.708L8.707 8l3.647-3.646-.708-.708L8 7.293 4.354 3.646l-.708.708L7.293 8l-3.647 3.646.708.708L8 8.707z"/></svg>
+      </button>
     </div>
   </div>
 
-  <div class="query-row">
+  <div class="find-input">
     <textarea id="replacement" rows="1" placeholder="Replace"></textarea>
-    <div class="options">
-      <button id="replaceBtn" class="primary" title="Replace in all checked secrets">Replace All</button>
+    <div class="find-actions">
+      <button type="button" id="replaceBtn" class="icon-btn action" title="Replace All" aria-label="Replace All">
+        <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true"><path d="M2.5 3.5h7.793L8.146 1.354l.708-.708L12.207 4l-3.353 3.354-.708-.708L10.293 4.5H2.5a2 2 0 0 0-2 2v2h1v-2a1 1 0 0 1 1-1zm11 9H5.707l2.147 2.146-.708.708L3.793 12l3.353-3.354.708.708L5.707 11.5H13.5a2 2 0 0 0 2-2v-2h-1v2a1 1 0 0 1-1 1z"/></svg>
+      </button>
     </div>
   </div>
 
   <div class="scope-opts">
     <label><input type="checkbox" id="searchKeys" checked /> Keys</label>
     <label><input type="checkbox" id="searchValues" checked /> Values</label>
-    <span class="spacer"></span>
-    <button id="searchBtn" class="primary">Search</button>
-    <button id="cancelBtn" hidden>Cancel</button>
   </div>
 
   <div id="status" class="status"></div>
