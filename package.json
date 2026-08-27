@@ -2,7 +2,7 @@
   "name": "vault-workbench",
   "displayName": "Vault Workbench",
   "description": "Vault Workbench: browse, search, edit, and batch search-and-replace HashiCorp Vault KV secrets. Fully local, no telemetry.",
-  "version": "0.3.0",
+  "version": "0.3.1",
   "publisher": "zwsq",
   "license": "MIT",
   "icon": "media/icon.png",
