@@ -27,17 +27,21 @@ jobs:
       - run: npm run test:unit
 
       - name: Package VSIX
-        run: npx @vscode/vsce package --out vault-workbench.vsix
+        run: |
+          VERSION=$(node -p "require('./package.json').version")
+          FILE="vault-workbench-${VERSION}.vsix"
+          npx @vscode/vsce package --out "$FILE"
+          echo "VSIX_FILE=$FILE" >> "$GITHUB_ENV"
 
       - name: Upload VSIX artifact
         uses: actions/upload-artifact@v4
         with:
           name: vault-workbench-vsix
-          path: vault-workbench.vsix
+          path: ${{ env.VSIX_FILE }}
 
       - name: Create GitHub Release
         if: startsWith(github.ref, 'refs/tags/v')
         uses: softprops/action-gh-release@v2
         with:
-          files: vault-workbench.vsix
+          files: ${{ env.VSIX_FILE }}
           generate_release_notes: true
