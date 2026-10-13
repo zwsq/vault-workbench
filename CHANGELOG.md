@@ -6,6 +6,15 @@ this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+
+- **Compare secrets** — right-click secrets and **Add to Compare** (exactly 2,
+  across any connections). Use the Vault Explorer **Compare Selected** button
+  to pick the source, then open a native side-by-side diff. **Clear Compare**
+  empties the list; adding an already-staged secret removes it.
+
 ## [0.3.1] - 2026-08-27
 
 ### Changed

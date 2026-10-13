@@ -1,6 +1,7 @@
 import * as vscode from "vscode";
 import { ConnectionStore } from "./storage/connectionStore";
 import { BackupStore } from "./storage/backupStore";
+import { CompareStore } from "./storage/compareStore";
 import { VaultServiceFactory } from "./vault/vaultServiceFactory";
 import { VaultTreeProvider } from "./tree/vaultTreeProvider";
 import { SearchViewProvider } from "./ui/searchViewProvider";
@@ -21,6 +22,7 @@ export function activate(context: vscode.ExtensionContext): void {
   const store = new ConnectionStore(context);
   const factory = new VaultServiceFactory(store);
   const backups = new BackupStore(context);
+  const compareStore = new CompareStore();
 
   const fsProvider = new VaultFileSystemProvider(factory, logger);
   context.subscriptions.push(
@@ -54,7 +56,17 @@ export function activate(context: vscode.ExtensionContext): void {
     })
   );
 
-  registerCommands({ context, store, factory, treeProvider, searchView, backups, fsProvider, logger });
+  registerCommands({
+    context,
+    store,
+    factory,
+    treeProvider,
+    searchView,
+    backups,
+    fsProvider,
+    compareStore,
+    logger,
+  });
 }
 
 export function deactivate(): void {

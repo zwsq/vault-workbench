@@ -2,6 +2,7 @@ import * as vscode from "vscode";
 import AdmZip = require("adm-zip");
 import { ConnectionStore } from "../storage/connectionStore";
 import { BackupStore } from "../storage/backupStore";
+import { CompareStore } from "../storage/compareStore";
 import { VaultServiceFactory, getConfig } from "../vault/vaultServiceFactory";
 import { VaultTreeProvider, VaultNode } from "../tree/vaultTreeProvider";
 import { SearchViewProvider } from "../ui/searchViewProvider";
@@ -18,12 +19,13 @@ export interface CommandDeps {
   searchView: SearchViewProvider;
   backups: BackupStore;
   fsProvider: VaultFileSystemProvider;
+  compareStore: CompareStore;
   logger: Logger;
 }
 
 /** Register all extension commands and push their disposables onto the context. */
 export function registerCommands(deps: CommandDeps): void {
-  const { context, store, treeProvider, searchView, backups, logger } = deps;
+  const { context, store, treeProvider, searchView, backups, compareStore, logger } = deps;
 
   const reg = (id: string, handler: (...args: any[]) => any) =>
     context.subscriptions.push(vscode.commands.registerCommand(id, wrap(id, handler, logger)));
@@ -346,6 +348,94 @@ export function registerCommands(deps: CommandDeps): void {
       return;
     }
     await vscode.env.clipboard.writeText(node.mount ? `${node.mount}/${node.path}` : node.path);
+  });
+
+  reg("vault.addToCompare", async (node?: VaultNode) => {
+    if (!node || node.kind !== "secret" || !node.mount || node.path === undefined) {
+      return;
+    }
+    const conn = store.get(node.connectionId);
+    const entry = {
+      connectionId: node.connectionId,
+      connectionName: conn?.name ?? node.connectionId,
+      mount: node.mount,
+      path: node.path,
+    };
+
+    if (compareStore.has(entry)) {
+      compareStore.remove(entry);
+      const remaining = compareStore.list().map((e) => compareStore.display(e)).join(", ") || "(empty)";
+      vscode.window.showInformationMessage(
+        `Removed from compare (${compareStore.size}/2). Now: ${remaining}`
+      );
+      return;
+    }
+
+    const result = compareStore.add(entry);
+    if (!result.ok) {
+      vscode.window.showWarningMessage(result.reason);
+      return;
+    }
+    const list = compareStore.list().map((e) => compareStore.display(e)).join(", ");
+    vscode.window.showInformationMessage(`Added to compare (${compareStore.size}/2): ${list}`);
+  });
+
+  reg("vault.clearCompare", () => {
+    if (compareStore.size === 0) {
+      vscode.window.showInformationMessage("Compare list is already empty.");
+      return;
+    }
+    compareStore.clear();
+    vscode.window.showInformationMessage("Compare list cleared.");
+  });
+
+  reg("vault.compareSelected", async () => {
+    const entries = [...compareStore.list()];
+    if (entries.length < 2) {
+      vscode.window.showWarningMessage('Add 2 secrets with "Add to Compare" first.');
+      return;
+    }
+
+    const sourcePick = await vscode.window.showQuickPick(
+      entries.map((e, index) => ({
+        label: compareStore.display(e),
+        description: `Slot ${index + 1}`,
+        detail: "Use as the left (source) side of the diff",
+        index,
+      })),
+      {
+        title: "Compare — Choose Source",
+        placeHolder: "Which secret is the comparison source?",
+      }
+    );
+    if (!sourcePick) {
+      return;
+    }
+
+    const source = entries[sourcePick.index];
+    const other = entries.find((_, i) => i !== sourcePick.index);
+    if (!other) {
+      return;
+    }
+
+    const leftUri = VaultFileSystemProvider.buildUri(source.connectionId, source.mount, source.path);
+    const rightUri = VaultFileSystemProvider.buildUri(other.connectionId, other.mount, other.path);
+
+    try {
+      await deps.fsProvider.readFile(leftUri);
+    } catch {
+      vscode.window.showErrorMessage(`Source secret not found: ${compareStore.display(source)}`);
+      return;
+    }
+    try {
+      await deps.fsProvider.readFile(rightUri);
+    } catch {
+      vscode.window.showErrorMessage(`Secret not found: ${compareStore.display(other)}`);
+      return;
+    }
+
+    const title = `${compareStore.display(source)} ↔ ${compareStore.display(other)}`;
+    await vscode.commands.executeCommand("vscode.diff", leftUri, rightUri, title, { preview: true });
   });
 
   reg("vault.copyTo", async (node?: VaultNode) => {

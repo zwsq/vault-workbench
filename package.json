@@ -140,6 +140,21 @@
         "icon": "$(copy)"
       },
       {
+        "command": "vault.addToCompare",
+        "title": "Add to Compare",
+        "icon": "$(add)"
+      },
+      {
+        "command": "vault.compareSelected",
+        "title": "Compare Selected",
+        "icon": "$(diff)"
+      },
+      {
+        "command": "vault.clearCompare",
+        "title": "Clear Compare",
+        "icon": "$(clear-all)"
+      },
+      {
         "command": "vault.downloadPath",
         "title": "Download Path"
       },
@@ -180,6 +195,16 @@
           "command": "vault.refresh",
           "when": "view == vaultExplorer",
           "group": "navigation@2"
+        },
+        {
+          "command": "vault.compareSelected",
+          "when": "view == vaultExplorer && vault.compareReady",
+          "group": "navigation@3"
+        },
+        {
+          "command": "vault.clearCompare",
+          "when": "view == vaultExplorer && vault.compareCount > 0",
+          "group": "navigation@4"
         }
       ],
       "view/item/context": [
@@ -239,9 +264,14 @@
           "group": "5_copy@2"
         },
         {
+          "command": "vault.addToCompare",
+          "when": "view == vaultExplorer && viewItem == vaultSecret",
+          "group": "5_copy@3"
+        },
+        {
           "command": "vault.downloadPath",
           "when": "view == vaultExplorer && viewItem =~ /^vault(Mount|Folder)$/",
-          "group": "5_copy@3"
+          "group": "5_copy@4"
         }
       ],
       "commandPalette": [
@@ -263,6 +293,10 @@
         },
         {
           "command": "vault.copyTo",
+          "when": "false"
+        },
+        {
+          "command": "vault.addToCompare",
           "when": "false"
         },
         {
