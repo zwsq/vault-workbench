@@ -97,7 +97,8 @@ export function registerCommands(deps: CommandDeps): void {
     if (!node || node.kind !== "secret" || !node.mount || node.path === undefined) {
       return;
     }
-    const uri = VaultFileSystemProvider.buildUri(node.connectionId, node.mount, node.path);
+    const connName = store.get(node.connectionId)?.name;
+    const uri = VaultFileSystemProvider.buildUri(node.connectionId, node.mount, node.path, connName);
     const doc = await vscode.workspace.openTextDocument(uri);
     await vscode.languages.setTextDocumentLanguage(doc, "json");
     await vscode.window.showTextDocument(doc, { preview: true });
@@ -121,7 +122,8 @@ export function registerCommands(deps: CommandDeps): void {
       return;
     }
     const fullPath = joinPath(base, rel);
-    const uri = VaultFileSystemProvider.buildUri(node.connectionId, node.mount, fullPath);
+    const connName = store.get(node.connectionId)?.name;
+    const uri = VaultFileSystemProvider.buildUri(node.connectionId, node.mount, fullPath, connName);
     let isNew = false;
     try {
       await deps.fsProvider.readFile(uri);
@@ -418,8 +420,18 @@ export function registerCommands(deps: CommandDeps): void {
       return;
     }
 
-    const leftUri = VaultFileSystemProvider.buildUri(source.connectionId, source.mount, source.path);
-    const rightUri = VaultFileSystemProvider.buildUri(other.connectionId, other.mount, other.path);
+    const leftUri = VaultFileSystemProvider.buildUri(
+      source.connectionId,
+      source.mount,
+      source.path,
+      source.connectionName
+    );
+    const rightUri = VaultFileSystemProvider.buildUri(
+      other.connectionId,
+      other.mount,
+      other.path,
+      other.connectionName
+    );
 
     try {
       await deps.fsProvider.readFile(leftUri);

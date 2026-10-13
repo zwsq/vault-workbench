@@ -300,13 +300,21 @@ export class SearchViewProvider implements vscode.WebviewViewProvider {
       return;
     }
     const connectionId = this.currentRequest.scope.connectionId;
-    const uri = VaultFileSystemProvider.buildUri(connectionId, mount, secretPath);
+    const connectionName = this.store.get(connectionId)?.name;
+    const uri = VaultFileSystemProvider.buildUri(connectionId, mount, secretPath, connectionName);
     void this.fsProvider; // provider is registered globally; open via workspace
 
     // With a replacement present, show a live diff (current vs proposed) so the
     // change is visible in an editor before anything is written.
     if (replacement && replacement.length > 0) {
-      const opened = await this.openReplaceDiff(connectionId, mount, secretPath, uri, replacement);
+      const opened = await this.openReplaceDiff(
+        connectionId,
+        connectionName,
+        mount,
+        secretPath,
+        uri,
+        replacement
+      );
       if (opened) {
         return;
       }
@@ -330,6 +338,7 @@ export class SearchViewProvider implements vscode.WebviewViewProvider {
   /** Open a diff of the secret's current content vs the proposed replacement. */
   private async openReplaceDiff(
     connectionId: string,
+    connectionName: string | undefined,
     mount: string,
     secretPath: string,
     originalUri: vscode.Uri,
@@ -350,13 +359,14 @@ export class SearchViewProvider implements vscode.WebviewViewProvider {
     if (proposed === document) {
       return false; // nothing would change; fall back to plain open
     }
-    const previewUri = ReplacePreviewProvider.buildUri(connectionId, mount, secretPath);
+    const previewUri = ReplacePreviewProvider.buildUri(connectionId, mount, secretPath, connectionName);
     this.previewProvider.set(previewUri, proposed);
+    const label = connectionName ? `${connectionName}/${mount}/${secretPath}` : `${mount}/${secretPath}`;
     await vscode.commands.executeCommand(
       "vscode.diff",
       originalUri,
       previewUri,
-      `${secretPath} — Replace Preview (right is proposed)`,
+      `${label} — Replace Preview (right is proposed)`,
       { preview: true }
     );
     return true;

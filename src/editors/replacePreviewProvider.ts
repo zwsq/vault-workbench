@@ -15,11 +15,19 @@ export class ReplacePreviewProvider implements vscode.TextDocumentContentProvide
   private readonly _onDidChange = new vscode.EventEmitter<vscode.Uri>();
   readonly onDidChange = this._onDidChange.event;
 
-  static buildUri(connectionId: string, mount: string, path: string): vscode.Uri {
+  static buildUri(
+    connectionId: string,
+    mount: string,
+    path: string,
+    connectionName?: string
+  ): vscode.Uri {
+    const name = (connectionName ?? "").trim() || connectionId;
+    const nameSeg = name.replace(/[/\\]+/g, "-");
     return vscode.Uri.from({
       scheme: PREVIEW_SCHEME,
       authority: connectionId,
-      path: `/${normalizePath(mount)}/${normalizePath(path)}.json`,
+      path: `/${nameSeg}/${normalizePath(mount)}/${normalizePath(path)}.json`,
+      query: JSON.stringify({ conn: name }),
     });
   }
 

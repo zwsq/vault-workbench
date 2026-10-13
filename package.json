@@ -51,6 +51,26 @@
     }
   },
   "contributes": {
+    "resourceLabelFormatters": [
+      {
+        "scheme": "vault",
+        "formatting": {
+          "label": "${path}",
+          "separator": "/",
+          "stripPathStartingSeparator": true,
+          "workspaceSuffix": "Vault"
+        }
+      },
+      {
+        "scheme": "vault-preview",
+        "formatting": {
+          "label": "${path} (proposed)",
+          "separator": "/",
+          "stripPathStartingSeparator": true,
+          "workspaceSuffix": "Vault"
+        }
+      }
+    ],
     "viewsContainers": {
       "activitybar": [
         {

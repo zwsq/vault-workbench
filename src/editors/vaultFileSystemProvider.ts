@@ -17,7 +17,12 @@ interface ParsedUri {
  * Exposes Vault secrets as editable virtual files under the `vault:` scheme so
  * they open and save with the native VS Code editor experience.
  *
- * URI shape: `vault://<connectionId>/<mount>/<secret/path>.json`
+ * URI shape:
+ * `vault://<connectionId>/<connectionName>/<mount>/<secret/path>.json`
+ *
+ * The connection name is the first path segment so breadcrumbs and the editor
+ * title bar can show which Vault instance the secret belongs to. The real id
+ * stays in the authority for lookups.
  *
  * Read returns formatted JSON. Save parses the JSON, preserves the object shape,
  * and writes back to Vault using a version-aware (check-and-set) write for KV v2.
@@ -34,18 +39,36 @@ export class VaultFileSystemProvider implements vscode.FileSystemProvider {
 
   constructor(private readonly factory: VaultServiceFactory, private readonly logger: Logger) {}
 
-  static buildUri(connectionId: string, mount: string, path: string): vscode.Uri {
+  static buildUri(
+    connectionId: string,
+    mount: string,
+    path: string,
+    connectionName?: string
+  ): vscode.Uri {
     const clean = normalizePath(path);
+    const name = (connectionName ?? "").trim() || connectionId;
+    // Keep as one breadcrumb segment (slashes in names would split the path).
+    const nameSeg = name.replace(/[/\\]+/g, "-");
     return vscode.Uri.from({
       scheme: VAULT_SCHEME,
       authority: connectionId,
-      path: `/${normalizePath(mount)}/${clean}.json`,
+      path: `/${nameSeg}/${normalizePath(mount)}/${clean}.json`,
+      query: JSON.stringify({ conn: name }),
     });
   }
 
   private parse(uri: vscode.Uri): ParsedUri {
     const segments = uri.path.replace(/^\/+/, "").split("/");
-    const mount = segments.shift() ?? "";
+    // Optional leading connection-name segment (for breadcrumbs / titles).
+    // Older URIs were /<mount>/<path>.json — detect by presence of query.conn
+    // or by treating the first segment as the name when query is present.
+    let mount: string;
+    if (uri.query) {
+      segments.shift(); // display name
+      mount = segments.shift() ?? "";
+    } else {
+      mount = segments.shift() ?? "";
+    }
     let joined = segments.join("/");
     if (joined.endsWith(".json")) {
       joined = joined.slice(0, -".json".length);
