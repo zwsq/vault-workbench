@@ -97,14 +97,44 @@
     "viewsWelcome": [
       {
         "view": "vaultExplorer",
-        "contents": "No Vault connections yet.\n[Add Connection](command:vault.addConnection)\nConnections are stored locally and never synced."
+        "contents": "No Vault connections yet.\n[Add Connection](command:vault.addConnection)\n[Add Group](command:vault.addGroup)\nConnections are stored locally and never synced."
       }
     ],
     "commands": [
       {
         "command": "vault.addConnection",
-        "title": "Vault: Add Connection",
+        "title": "Add Connection",
         "icon": "$(add)"
+      },
+      {
+        "command": "vault.addGroup",
+        "title": "Add Group",
+        "icon": "$(new-folder)"
+      },
+      {
+        "command": "vault.renameGroup",
+        "title": "Rename Group",
+        "icon": "$(edit)"
+      },
+      {
+        "command": "vault.deleteGroup",
+        "title": "Delete Group",
+        "icon": "$(trash)"
+      },
+      {
+        "command": "vault.moveConnectionToGroup",
+        "title": "Move to Group…",
+        "icon": "$(folder)"
+      },
+      {
+        "command": "vault.moveUp",
+        "title": "Move Up",
+        "icon": "$(arrow-up)"
+      },
+      {
+        "command": "vault.moveDown",
+        "title": "Move Down",
+        "icon": "$(arrow-down)"
       },
       {
         "command": "vault.editConnection",
@@ -212,22 +242,42 @@
           "group": "navigation@1"
         },
         {
-          "command": "vault.refresh",
+          "command": "vault.addGroup",
           "when": "view == vaultExplorer",
           "group": "navigation@2"
         },
         {
+          "command": "vault.refresh",
+          "when": "view == vaultExplorer",
+          "group": "navigation@3"
+        },
+        {
           "command": "vault.compareSelected",
           "when": "view == vaultExplorer && vault.compareReady",
-          "group": "navigation@3"
+          "group": "navigation@4"
         },
         {
           "command": "vault.clearCompare",
           "when": "view == vaultExplorer && vault.compareCount > 0",
-          "group": "navigation@4"
+          "group": "navigation@5"
         }
       ],
       "view/item/context": [
+        {
+          "command": "vault.addConnection",
+          "when": "view == vaultExplorer && viewItem == vaultGroup",
+          "group": "1_group@1"
+        },
+        {
+          "command": "vault.renameGroup",
+          "when": "view == vaultExplorer && viewItem == vaultGroup",
+          "group": "1_group@2"
+        },
+        {
+          "command": "vault.deleteGroup",
+          "when": "view == vaultExplorer && viewItem == vaultGroup",
+          "group": "1_group@3"
+        },
         {
           "command": "vault.setToken",
           "when": "view == vaultExplorer && viewItem == vaultConnection",
@@ -239,13 +289,28 @@
           "group": "2_manage@1"
         },
         {
-          "command": "vault.deleteConnection",
+          "command": "vault.moveConnectionToGroup",
           "when": "view == vaultExplorer && viewItem == vaultConnection",
           "group": "2_manage@2"
         },
         {
+          "command": "vault.moveUp",
+          "when": "view == vaultExplorer && viewItem =~ /^vault(Group|Connection)$/",
+          "group": "2_manage@3"
+        },
+        {
+          "command": "vault.moveDown",
+          "when": "view == vaultExplorer && viewItem =~ /^vault(Group|Connection)$/",
+          "group": "2_manage@4"
+        },
+        {
+          "command": "vault.deleteConnection",
+          "when": "view == vaultExplorer && viewItem == vaultConnection",
+          "group": "2_manage@5"
+        },
+        {
           "command": "vault.refresh",
-          "when": "view == vaultExplorer && viewItem =~ /^vault(Connection|Mount|Folder)$/",
+          "when": "view == vaultExplorer && viewItem =~ /^vault(Group|Connection|Mount|Folder)$/",
           "group": "3_search@0"
         },
         {

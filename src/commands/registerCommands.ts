@@ -8,7 +8,7 @@ import { VaultTreeProvider, VaultNode } from "../tree/vaultTreeProvider";
 import { SearchViewProvider } from "../ui/searchViewProvider";
 import { VaultFileSystemProvider } from "../editors/vaultFileSystemProvider";
 import { Logger, summarizeError } from "../utils/logger";
-import { promptConnection, promptToken } from "../ui/connectionInput";
+import { promptConnection, promptToken, uuid } from "../ui/connectionInput";
 import { joinPath } from "../utils/paths";
 
 export interface CommandDeps {
@@ -30,10 +30,13 @@ export function registerCommands(deps: CommandDeps): void {
   const reg = (id: string, handler: (...args: any[]) => any) =>
     context.subscriptions.push(vscode.commands.registerCommand(id, wrap(id, handler, logger)));
 
-  reg("vault.addConnection", async () => {
+  reg("vault.addConnection", async (node?: VaultNode) => {
     const conn = await promptConnection();
     if (!conn) {
       return;
+    }
+    if (node?.kind === "group" && node.groupId) {
+      conn.groupId = node.groupId;
     }
     await store.upsert(conn);
     const token = await promptToken(conn.name);
@@ -42,6 +45,132 @@ export function registerCommands(deps: CommandDeps): void {
     }
     treeProvider.refresh();
     logger.info(`Added connection "${conn.name}".`);
+  });
+
+  reg("vault.addGroup", async () => {
+    const name = await vscode.window.showInputBox({
+      title: "New Connection Group",
+      prompt: "Name for the group (e.g. Production, Staging)",
+      validateInput: (v) => (v.trim().length === 0 ? "Name is required." : undefined),
+    });
+    if (!name) {
+      return;
+    }
+    const trimmed = name.trim();
+    if (store.listGroups().some((g) => g.name.toLowerCase() === trimmed.toLowerCase())) {
+      vscode.window.showErrorMessage(`A group named "${trimmed}" already exists.`);
+      return;
+    }
+    await store.upsertGroup({ id: uuid(), name: trimmed, sortOrder: store.listGroups().length });
+    treeProvider.refresh();
+    logger.info(`Added connection group "${trimmed}".`);
+  });
+
+  reg("vault.renameGroup", async (node?: VaultNode) => {
+    if (!node || node.kind !== "group" || !node.groupId) {
+      return;
+    }
+    const group = store.getGroup(node.groupId);
+    if (!group) {
+      return;
+    }
+    const name = await vscode.window.showInputBox({
+      title: "Rename Group",
+      prompt: "New group name",
+      value: group.name,
+      validateInput: (v) => {
+        const trimmed = v.trim();
+        if (!trimmed) {
+          return "Name is required.";
+        }
+        if (
+          store
+            .listGroups()
+            .some((g) => g.id !== group.id && g.name.toLowerCase() === trimmed.toLowerCase())
+        ) {
+          return "Another group already uses this name.";
+        }
+        return undefined;
+      },
+    });
+    if (!name) {
+      return;
+    }
+    await store.upsertGroup({ ...group, name: name.trim() });
+    treeProvider.refresh();
+    logger.info(`Renamed group to "${name.trim()}".`);
+  });
+
+  reg("vault.deleteGroup", async (node?: VaultNode) => {
+    if (!node || node.kind !== "group" || !node.groupId) {
+      return;
+    }
+    const group = store.getGroup(node.groupId);
+    if (!group) {
+      return;
+    }
+    const count = store.listInGroup(group.id).length;
+    const confirm = await vscode.window.showWarningMessage(
+      count > 0
+        ? `Delete group "${group.name}"? Its ${count} connection(s) will become ungrouped (not deleted).`
+        : `Delete group "${group.name}"?`,
+      { modal: true },
+      "Delete"
+    );
+    if (confirm !== "Delete") {
+      return;
+    }
+    await store.removeGroup(group.id);
+    treeProvider.refresh();
+    logger.info(`Deleted connection group "${group.name}".`);
+  });
+
+  reg("vault.moveConnectionToGroup", async (node?: VaultNode) => {
+    if (!node || node.kind !== "connection" || !node.connectionId) {
+      return;
+    }
+    const groups = store.listGroups();
+    const picks: Array<{ label: string; groupId: string | undefined }> = [
+      { label: "$(root-folder) Ungrouped", groupId: undefined },
+      ...groups.map((g) => ({ label: `$(folder-library) ${g.name}`, groupId: g.id })),
+    ];
+    const pick = await vscode.window.showQuickPick(picks, {
+      title: "Move Connection to Group",
+      placeHolder: node.label,
+    });
+    if (!pick) {
+      return;
+    }
+    await store.setConnectionGroup(node.connectionId, pick.groupId);
+    treeProvider.refresh();
+  });
+
+  reg("vault.moveUp", async (node?: VaultNode) => {
+    if (!node) {
+      return;
+    }
+    if (node.kind === "connection" && node.connectionId) {
+      await store.shiftConnection(node.connectionId, -1);
+    } else if (node.kind === "group" && node.groupId) {
+      await store.shiftGroup(node.groupId, -1);
+    } else {
+      return;
+    }
+    treeProvider.refresh();
+  });
+
+  reg("vault.moveDown", async (node?: VaultNode) => {
+    if (!node) {
+      return;
+    }
+    if (node.kind === "connection" && node.connectionId) {
+      await store.shiftConnection(node.connectionId, 1);
+    } else if (node.kind === "group" && node.groupId) {
+      await store.shiftGroup(node.groupId, 1);
+    } else {
+      return;
+    }
+    treeProvider.refresh();
   });
 
   reg("vault.editConnection", async (node?: VaultNode) => {

@@ -27,6 +27,18 @@ export interface VaultConnection {
   basePath?: string;
   /** Optional explicit KV engine version override; auto-detected when omitted. */
   kvVersion?: KvVersion;
+  /** Optional group id; undefined means ungrouped (shown at the tree root). */
+  groupId?: string;
+  /** Sort order within the group (or among ungrouped connections). Lower first. */
+  sortOrder?: number;
+}
+
+/** User-defined folder for organizing connections in the Vault Explorer. */
+export interface ConnectionGroup {
+  id: string;
+  name: string;
+  /** Sort order among groups at the tree root. Lower first. */
+  sortOrder: number;
 }
 
 export type VaultAuthMethod = "token";
