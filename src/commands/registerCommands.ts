@@ -8,7 +8,15 @@ import { VaultTreeProvider, VaultNode } from "../tree/vaultTreeProvider";
 import { SearchViewProvider } from "../ui/searchViewProvider";
 import { VaultFileSystemProvider } from "../editors/vaultFileSystemProvider";
 import { Logger, summarizeError } from "../utils/logger";
-import { promptConnection, promptToken, uuid } from "../ui/connectionInput";
+import {
+  isAuthError,
+  offerReauthOnError,
+  promptConnection,
+  promptNewConnection,
+  reauthenticateWithVaultUi,
+  uuid,
+} from "../ui/connectionInput";
+import { VaultConnection } from "../models/connection";
 import { joinPath } from "../utils/paths";
 
 export interface CommandDeps {
@@ -28,21 +36,21 @@ export function registerCommands(deps: CommandDeps): void {
   const { context, store, treeProvider, searchView, backups, compareStore, logger } = deps;
 
   const reg = (id: string, handler: (...args: any[]) => any) =>
-    context.subscriptions.push(vscode.commands.registerCommand(id, wrap(id, handler, logger)));
+    context.subscriptions.push(
+      vscode.commands.registerCommand(id, wrap(id, handler, logger, store, treeProvider))
+    );
 
   reg("vault.addConnection", async (node?: VaultNode) => {
-    const conn = await promptConnection();
-    if (!conn) {
+    const result = await promptNewConnection();
+    if (!result) {
       return;
     }
+    const { connection: conn, token } = result;
     if (node?.kind === "group" && node.groupId) {
       conn.groupId = node.groupId;
     }
     await store.upsert(conn);
-    const token = await promptToken(conn.name);
-    if (token) {
-      await store.setToken(conn.id, token);
-    }
+    await store.setToken(conn.id, token);
     treeProvider.refresh();
     logger.info(`Added connection "${conn.name}".`);
   });
@@ -210,7 +218,25 @@ export function registerCommands(deps: CommandDeps): void {
     if (!conn) {
       return;
     }
-    const token = await promptToken(conn.name);
+    const pick = await vscode.window.showQuickPick(
+      [
+        {
+          label: "Open Vault UI and paste token",
+          detail: "Opens the Vault login page in your browser, then asks you to paste the new token",
+          openBrowser: true,
+        },
+        {
+          label: "Paste token only",
+          detail: "Enter a token without opening the browser",
+          openBrowser: false,
+        },
+      ],
+      { title: `Set Token — ${conn.name}`, ignoreFocusOut: true }
+    );
+    if (!pick) {
+      return;
+    }
+    const token = await reauthenticateWithVaultUi(conn, { openBrowser: pick.openBrowser });
     if (token === undefined) {
       return;
     }
@@ -619,14 +645,10 @@ export function registerCommands(deps: CommandDeps): void {
     const destService = await deps.factory.create(destConnPick.id);
     let mounts: string[] = [];
     try {
-      mounts = await destService.listMounts();
+      mounts = (await destService.discoverKvMounts()).map((m) => m.path);
     } catch (err) {
       vscode.window.showErrorMessage(`Vault: ${summarizeError(err)}`);
       return;
-    }
-    const destConn = store.get(destConnPick.id);
-    if (mounts.length === 0 && destConn?.defaultMount) {
-      mounts = [destConn.defaultMount];
     }
     if (mounts.length === 0) {
       vscode.window.showErrorMessage("Target connection has no KV mounts.");
@@ -881,14 +903,49 @@ async function pickConnection(store: ConnectionStore, preferId: string | undefin
   return pick ? store.get(pick.id) : undefined;
 }
 
-/** Wrap a command handler with uniform error reporting. */
-function wrap(id: string, handler: (...args: any[]) => any, logger: Logger) {
+/** Wrap a command handler with uniform error reporting and token re-auth offers. */
+function wrap(
+  id: string,
+  handler: (...args: any[]) => any,
+  logger: Logger,
+  store: ConnectionStore,
+  treeProvider: VaultTreeProvider
+) {
   return async (...args: any[]) => {
     try {
       return await handler(...args);
     } catch (err) {
       logger.errorFrom(id, err);
-      vscode.window.showErrorMessage(`Vault: ${summarizeError(err)}`);
+      const conn = connectionFromArgs(store, args);
+      const reauthed = await offerReauthOnError(err, conn, store);
+      if (reauthed) {
+        treeProvider.refresh();
+        try {
+          return await handler(...args);
+        } catch (retryErr) {
+          logger.errorFrom(id, retryErr);
+          vscode.window.showErrorMessage(`Vault: ${summarizeError(retryErr)}`);
+        }
+        return;
+      }
+      // offerReauthOnError already displayed the message when an auth error had a connection.
+      if (!conn || !isAuthError(err)) {
+        vscode.window.showErrorMessage(`Vault: ${summarizeError(err)}`);
+      }
     }
   };
+}
+
+/** Best-effort: find a connection from command args (tree node or similar). */
+function connectionFromArgs(store: ConnectionStore, args: any[]): VaultConnection | undefined {
+  for (const arg of args) {
+    if (arg && typeof arg === "object" && typeof arg.connectionId === "string" && arg.connectionId) {
+      const c = store.get(arg.connectionId);
+      if (c) {
+        return c;
+      }
+    }
+  }
+  const list = store.list();
+  return list.length === 1 ? list[0] : undefined;
 }

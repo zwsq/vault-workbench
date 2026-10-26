@@ -2,6 +2,7 @@ import * as vscode from "vscode";
 import { SearchOptions, SearchRequest, SecretMatches } from "../models/search";
 import { ConnectionStore } from "../storage/connectionStore";
 import { BackupStore } from "../storage/backupStore";
+import { offerReauthOnError } from "./connectionInput";
 import { Logger, summarizeError } from "../utils/logger";
 import { getConfig, VaultServiceFactory } from "../vault/vaultServiceFactory";
 import { SearchEngine } from "../search/searchEngine";
@@ -138,18 +139,24 @@ export class SearchViewProvider implements vscode.WebviewViewProvider {
     }
     try {
       const service = await this.factory.create(connectionId);
-      let mounts = await service.listMounts();
       const conn = this.store.get(connectionId);
-      if (mounts.length === 0 && conn?.defaultMount) {
-        mounts = [conn.defaultMount];
-      }
+      const pinned = (conn?.defaultMount ?? "").trim();
+      const mounts = pinned
+        ? [pinned]
+        : (await service.discoverKvMounts()).map((m) => m.path);
       this.post({
         type: "mounts",
         connectionId,
         mounts,
-        defaultMount: preferredMount || conn?.defaultMount || "",
+        defaultMount: preferredMount || pinned || mounts[0] || "",
       });
     } catch (err) {
+      const conn = this.store.get(connectionId);
+      const reauthed = await offerReauthOnError(err, conn, this.store);
+      if (reauthed) {
+        await this.sendMounts(connectionId, preferredMount);
+        return;
+      }
       this.post({ type: "error", message: summarizeError(err) });
     }
   }
@@ -189,6 +196,12 @@ export class SearchViewProvider implements vscode.WebviewViewProvider {
         `Search "${redactQuery(req.query)}" on ${req.mount}: ${results.length} secret(s) matched.`
       );
     } catch (err) {
+      const conn = this.store.get(req.connectionId);
+      const reauthed = await offerReauthOnError(err, conn, this.store);
+      if (reauthed) {
+        await this.runSearch(req);
+        return;
+      }
       this.post({ type: "error", message: summarizeError(err) });
       this.post({ type: "searchDone", count: this.currentResults.length, cancelled: true });
     }

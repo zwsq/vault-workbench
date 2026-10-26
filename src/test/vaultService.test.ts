@@ -2,7 +2,14 @@ import { test, before, after } from "node:test";
 import assert from "node:assert/strict";
 import * as http from "node:http";
 import { AddressInfo } from "node:net";
-import { VaultService } from "../vault/vaultService";
+import {
+  VaultService,
+  accessiblePathRoots,
+  apiPathToLogical,
+  logicalPathsFromAcl,
+  mountsFromAcl,
+  parseUiSecretMounts,
+} from "../vault/vaultService";
 import { ResolvedConnection } from "../models/connection";
 
 /**
@@ -32,15 +39,50 @@ before(async () => {
       return json(res, 403, { errors: ["permission denied"] });
     }
 
-    // A path-scoped token cannot read sys/* or the KV config endpoint.
-    const isSysOrConfig =
-      path.startsWith("/v1/sys/") || path === "/v1/secret/config";
-    if (token === "scoped-token" && isSysOrConfig) {
-      return json(res, 403, { errors: ["permission denied"] });
+    // Path-scoped tokens cannot read sys/mounts or KV config, but Vault's default
+    // policy still allows the UI discovery endpoints (same as real Vault).
+    if (token === "scoped-token") {
+      const blocked =
+        path === "/v1/sys/mounts" ||
+        path.startsWith("/v1/sys/mounts/") ||
+        path === "/v1/secret/config";
+      if (blocked) {
+        return json(res, 403, { errors: ["permission denied"] });
+      }
     }
 
     if (path === "/v1/sys/internal/ui/mounts/secret") {
       return json(res, 200, { data: { options: { version: "2" } } });
+    }
+    if (path === "/v1/sys/internal/ui/mounts" && req.method === "GET") {
+      return json(res, 200, {
+        data: {
+          secret: {
+            "secret/": { type: "kv", options: { version: "2" } },
+            "kv-v1/": { type: "kv", options: { version: "1" } },
+            "cubbyhole/": { type: "cubbyhole" },
+          },
+          auth: {
+            "token/": { type: "token" },
+          },
+        },
+      });
+    }
+    if (path === "/v1/sys/internal/ui/resultant-acl" && req.method === "GET") {
+      return json(res, 200, {
+        data: {
+          exact_paths: {
+            "auth/token/lookup-self": { capabilities: ["read"] },
+            "secret/data/apps/api": { capabilities: ["read"] },
+          },
+          glob_paths: {
+            "secret/data/apps/*": { capabilities: ["list", "read"] },
+            "secret/metadata/apps/*": { capabilities: ["list", "read"] },
+            "kv-v1/legacy/*": { capabilities: ["read", "list"] },
+          },
+          root: false,
+        },
+      });
     }
     if (path === "/v1/auth/token/lookup-self") {
       return json(res, 200, { data: { id: "redacted" } });
@@ -153,4 +195,86 @@ test("scoped token listMounts falls back to default mount instead of 403", async
 test("explicit kvVersion skips detection entirely", async () => {
   const svc = makeService("scoped-token", { kvVersion: 2 });
   assert.equal(await svc.detectKvVersion("secret"), 2);
+});
+
+test("listUiMounts returns KV mounts with versions from UI endpoint", async () => {
+  const mounts = await makeService().listUiMounts();
+  assert.deepEqual(
+    mounts.map((m) => ({ path: m.path, kvVersion: m.kvVersion })),
+    [
+      { path: "kv-v1", kvVersion: 1 },
+      { path: "secret", kvVersion: 2 },
+    ]
+  );
+});
+
+test("listAccessiblePaths maps KV v2 ACL paths to logical prefixes", async () => {
+  const paths = await makeService().listAccessiblePaths("secret");
+  assert.deepEqual(paths, ["apps", "apps/api"]);
+});
+
+test("listAccessiblePaths for another mount uses that mount's ACL entries", async () => {
+  const paths = await makeService().listAccessiblePaths("kv-v1");
+  assert.deepEqual(paths, ["legacy"]);
+});
+
+test("parseUiSecretMounts filters non-KV and strips trailing slash", () => {
+  const mounts = parseUiSecretMounts({
+    "secret/": { type: "kv", options: { version: "2" } },
+    "db/": { type: "database" },
+  });
+  assert.deepEqual(mounts, [{ path: "secret", kvVersion: 2 }]);
+});
+
+test("apiPathToLogical strips data/metadata and globs", () => {
+  assert.equal(apiPathToLogical("secret", "secret/data/apps/*"), "apps");
+  assert.equal(apiPathToLogical("secret", "secret/metadata/apps/api"), "apps/api");
+  assert.equal(apiPathToLogical("secret", "secret/data"), "");
+  assert.equal(apiPathToLogical("secret", "other/data/apps"), undefined);
+});
+
+test("logicalPathsFromAcl returns mount root for root tokens", () => {
+  assert.deepEqual(logicalPathsFromAcl("secret", { root: true }), [""]);
+});
+
+test("logicalPathsFromAcl dedupes data and metadata globs", () => {
+  const paths = logicalPathsFromAcl("secret", {
+    glob_paths: {
+      "secret/data/apps/*": {},
+      "secret/metadata/apps/*": {},
+    },
+  });
+  assert.deepEqual(paths, ["apps"]);
+});
+
+test("scoped token discoverKvMounts uses UI mounts without sys/mounts", async () => {
+  const mounts = await makeService("scoped-token", { defaultMount: "" }).discoverKvMounts();
+  assert.deepEqual(
+    mounts.map((m) => m.path),
+    ["kv-v1", "secret"]
+  );
+});
+
+test("scoped token listAccessiblePaths still works via UI ACL", async () => {
+  const paths = await makeService("scoped-token", { defaultMount: "" }).listAccessiblePaths("secret");
+  assert.deepEqual(paths, ["apps", "apps/api"]);
+});
+
+test("mountsFromAcl infers KV mounts and skips sys/auth", () => {
+  assert.deepEqual(
+    mountsFromAcl({
+      exact_paths: { "auth/token/lookup-self": {} },
+      glob_paths: {
+        "secret/data/apps/*": {},
+        "kv-v1/legacy/*": {},
+        "sys/mounts": {},
+      },
+    }),
+    ["kv-v1", "secret"]
+  );
+});
+
+test("accessiblePathRoots keeps shallowest prefixes", () => {
+  assert.deepEqual(accessiblePathRoots(["apps/api", "apps", "other"]), ["apps", "other"]);
+  assert.deepEqual(accessiblePathRoots(["", "apps"]), [""]);
 });

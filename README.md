@@ -45,7 +45,7 @@ or AI feature of any kind.
 ## Creating a connection
 
 Open the **Vault** view in the Activity Bar and run **Add Connection** (the `+`
-button or `Vault: Add Connection`). The wizard prompts, in order, for:
+button or Command Palette: `Add Connection — Vault`). The wizard prompts, in order, for:
 
 1. **Display name** — a friendly label shown in the tree.
 2. **URL** — e.g. `https://vault.company.local:8200` (http or https).
@@ -61,7 +61,7 @@ button or `Vault: Add Connection`). The wizard prompts, in order, for:
    self-signed certificates / internal PKI.
 
 You are then prompted for the **token**, which is stored in VS Code
-SecretStorage (never in settings, never synced). Use `Vault: Set Token` on a
+SecretStorage (never in settings, never synced). Use `Set Token — Vault` on a
 connection to update it later.
 
 > Scoped tokens: browsing and searching require `list` on the KV `metadata`

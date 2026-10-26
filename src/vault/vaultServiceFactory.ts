@@ -32,7 +32,10 @@ export class VaultServiceFactory {
     }
     const token = await this.store.getToken(connectionId);
     if (!token) {
-      throw new VaultError("tokenExpired", `No token set for "${conn.name}". Run "Vault: Set Token".`);
+      throw new VaultError(
+        "tokenExpired",
+        `No token set for "${conn.name}". Re-authenticate or run "Set Token — Vault".`
+      );
     }
     return { ...conn, token };
   }

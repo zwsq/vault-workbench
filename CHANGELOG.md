@@ -6,6 +6,21 @@ this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Changed
+
+- Command palette titles use an action-first **— Vault** suffix (e.g. Add Group —
+  Vault) instead of a `Vault:` prefix.
+- **Add / Edit Connection** offer **Normal** or **Advanced** mode. Normal
+  (recommended) is token-first and lists all mounts/paths the token can access
+  when browsing. Advanced adds optional KV mount, path prefix, and KV version to
+  restrict the explorer. Edit opens Advanced first when a restriction is already
+  set; choosing Normal clears it. Existing connections are unchanged until edited.
+- **Expired / missing token** — operations offer **Re-authenticate…**, which
+  opens the Vault web UI login page and prompts you to paste a new token.
+  **Set Token** uses the same open-UI-or-paste flow.
+
 ## [0.5.0] - 2026-10-20
 
 ### Added

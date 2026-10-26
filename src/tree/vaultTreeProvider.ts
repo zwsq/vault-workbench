@@ -1,8 +1,11 @@
 import * as vscode from "vscode";
 import { VaultConnection } from "../models/connection";
 import { ConnectionStore } from "../storage/connectionStore";
+import { isAuthError, offerReauthOnError } from "../ui/connectionInput";
 import { Logger, summarizeError } from "../utils/logger";
-import { joinPath } from "../utils/paths";
+import { VaultError } from "../utils/errors";
+import { baseName, joinPath, normalizePath } from "../utils/paths";
+import { accessiblePathRoots } from "../vault/vaultService";
 import { VaultServiceFactory } from "../vault/vaultServiceFactory";
 
 export type VaultNodeKind = "group" | "connection" | "mount" | "folder" | "secret";
@@ -123,17 +126,47 @@ export class VaultTreeProvider implements vscode.TreeDataProvider<VaultNode> {
         case "connection":
           return await this.mountsOf(node.connectionId);
         case "mount": {
-          const base = this.store.get(node.connectionId)?.basePath ?? "";
-          return await this.listChildren(node.connectionId, node.mount!, base);
+          const base = normalizePath(this.store.get(node.connectionId)?.basePath ?? "");
+          if (base) {
+            // Path prefix is set (Edit Connection): show only that path under the
+            // mount — never siblings from a full mount listing or ACL roots.
+            return [
+              {
+                kind: "folder" as const,
+                label: base,
+                connectionId: node.connectionId,
+                mount: node.mount!,
+                path: base,
+              },
+            ];
+          }
+          return await this.listChildrenWithAclFallback(node.connectionId, node.mount!, "");
         }
         case "folder":
-          return await this.listChildren(node.connectionId, node.mount!, node.path!);
+          return await this.listChildrenWithAclFallback(
+            node.connectionId,
+            node.mount!,
+            node.path ?? ""
+          );
         default:
           return [];
       }
     } catch (err) {
       this.logger.warn(`Failed to expand ${node.kind}: ${summarizeError(err)}`);
-      vscode.window.showErrorMessage(`Vault: ${summarizeError(err)}`);
+      const conn = node.connectionId ? this.store.get(node.connectionId) : undefined;
+      const reauthed = await offerReauthOnError(err, conn, this.store);
+      if (reauthed) {
+        try {
+          return await this.getChildren(node);
+        } catch (retryErr) {
+          this.logger.warn(`Retry after re-auth failed: ${summarizeError(retryErr)}`);
+          vscode.window.showErrorMessage(`Vault: ${summarizeError(retryErr)}`);
+          return [];
+        }
+      }
+      if (!conn || !isAuthError(err)) {
+        vscode.window.showErrorMessage(`Vault: ${summarizeError(err)}`);
+      }
       return [];
     }
   }
@@ -147,13 +180,90 @@ export class VaultTreeProvider implements vscode.TreeDataProvider<VaultNode> {
   }
 
   private async mountsOf(connectionId: string): Promise<VaultNode[]> {
-    const service = await this.factory.create(connectionId);
     const conn = this.store.get(connectionId)!;
-    let mounts = await service.listMounts();
-    if (mounts.length === 0 && conn.defaultMount) {
-      mounts = [conn.defaultMount];
+    // Edit Connection can pin a single KV mount; honor that instead of listing all.
+    const pinned = (conn.defaultMount ?? "").trim();
+    if (pinned) {
+      return [{ kind: "mount" as const, label: pinned, connectionId, mount: pinned }];
     }
-    return mounts.map((m) => ({ kind: "mount" as const, label: m, connectionId, mount: m }));
+    const service = await this.factory.create(connectionId);
+    const mounts = await service.discoverKvMounts();
+    return mounts.map((m) => ({
+      kind: "mount" as const,
+      label: m.path,
+      connectionId,
+      mount: m.path,
+    }));
+  }
+
+  /**
+   * List children under a mount/path. When LIST returns nothing / permission denied
+   * at this path — typical for path-scoped tokens — seed folder nodes from
+   * resultant-ACL, but only under `path` (never siblings outside it).
+   */
+  private async listChildrenWithAclFallback(
+    connectionId: string,
+    mount: string,
+    path: string
+  ): Promise<VaultNode[]> {
+    const normPath = normalizePath(path);
+    try {
+      const children = await this.listChildren(connectionId, mount, normPath);
+      if (children.length > 0) {
+        return children;
+      }
+    } catch (err) {
+      if (!this.isListPermissionDenied(err)) {
+        throw err;
+      }
+    }
+
+    const service = await this.factory.create(connectionId);
+    const accessible = await service.listAccessiblePaths(mount);
+    const under = accessible.filter((p) => {
+      if (!normPath) {
+        return p !== "";
+      }
+      return p === normPath || p.startsWith(normPath + "/");
+    });
+    const roots = accessiblePathRoots(under);
+
+    // Immediate children relative to normPath (or top ACL roots when at mount root).
+    const seeded: string[] = [];
+    for (const p of roots) {
+      if (!normPath) {
+        if (p) {
+          seeded.push(p);
+        }
+        continue;
+      }
+      if (p === normPath) {
+        continue;
+      }
+      if (p.startsWith(normPath + "/")) {
+        const rest = p.slice(normPath.length + 1);
+        const next = rest.split("/")[0];
+        if (next) {
+          seeded.push(joinPath(normPath, next));
+        }
+      }
+    }
+
+    const unique = [...new Set(seeded)];
+    return unique.map((p) => ({
+      kind: "folder" as const,
+      label: baseName(p) || p,
+      connectionId,
+      mount,
+      path: p,
+    }));
+  }
+
+  private isListPermissionDenied(err: unknown): boolean {
+    return (
+      err instanceof VaultError &&
+      (err.kind === "unauthorized" || err.kind === "forbidden" || err.kind === "tokenExpired")
+    );
   }
 
   private async listChildren(connectionId: string, mount: string, path: string): Promise<VaultNode[]> {
